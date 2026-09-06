@@ -294,7 +294,7 @@ spendControls: {
     }
   },
   "schemes": [
-    { "scheme": "v2-eip155-exact", "chains": ["eip155:43113"] }
+    { "id": "v2-eip155-exact", "chains": "eip155:43113" }
   ]
 }
 ```
