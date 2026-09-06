@@ -4,3 +4,4 @@ coverage/
 .superpowers/
 
 .DS_Store
+.vercel
