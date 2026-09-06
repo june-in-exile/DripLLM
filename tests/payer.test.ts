@@ -6,7 +6,7 @@ const SETTLE = "0xbbbb000000000000000000000000000000000002";
 
 const payload = (from?: string) => ({
   signature: "0xsig",
-  authorization: from ? { from, to: "0xto", value: "1000" } : {},
+  authorization: from !== undefined ? { from, to: "0xto", value: "1000" } : {},
 });
 
 describe("extractPayer", () => {
@@ -16,6 +16,10 @@ describe("extractPayer", () => {
 
   it("authorization.from 缺席時退回 result.payer", () => {
     expect(extractPayer(payload(undefined), SETTLE)).toBe(SETTLE);
+  });
+
+  it("authorization.from 為空字串時退回 result.payer", () => {
+    expect(extractPayer(payload(""), SETTLE)).toBe(SETTLE);
   });
 
   it("兩者皆空時拋錯,絕不回傳 undefined", () => {
