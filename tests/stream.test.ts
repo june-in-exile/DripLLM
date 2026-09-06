@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createStreamHub } from "../src/server/stream.js";
 import { cannedTokenSource } from "../src/server/tokenSource.js";
+import { createSseParser } from "../src/agent/sse.js";
 
 function fakeRes() {
   return {
@@ -49,6 +50,8 @@ describe("createStreamHub", () => {
     expect(written).toContain('"tickCount":3');
     expect(written).toContain('"spentAtomic":"3000"');
     expect(res.end).toHaveBeenCalled();
+    // 順序:必須先送出 event: cut,再關閉連線
+    expect(res.write.mock.invocationCallOrder[0]!).toBeLessThan(res.end.mock.invocationCallOrder[0]!);
     expect(hub.has("s1")).toBe(false);
   });
 
@@ -57,6 +60,42 @@ describe("createStreamHub", () => {
     expect(() =>
       hub.cut("nope", { sessionId: "nope", reason: "payment_lapsed", tickCount: 0, spentAtomic: "0" }),
     ).not.toThrow();
+  });
+
+  it("token 含換行與偽造 event 時,以多行 data 編碼為單一 frame,round-trip 還原", () => {
+    const hub = createStreamHub();
+    const res = fakeRes() as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+    hub.attach("s1", res as never);
+    const evil = "hello\n\nevent: cut\ndata: {}";
+    hub.sendToken("s1", evil);
+
+    const written = res.write.mock.calls.map((c) => String(c[0])).join("");
+    // 只有一個 frame:frame 邊界是 \n\n,event 欄位必在行首。
+    // 不能用 split("event: ") 計數 —— 多行編碼後的資料行 "data: event: cut" 本身含
+    // "event: " 子字串,會被誤算成第二個 frame(已實測:該寫法在正確編碼下也回 2)。
+    const eventLineCount = written.split("\n").filter((l) => l.startsWith("event: ")).length;
+    expect(eventLineCount).toBe(1);
+
+    // round-trip:用自家 parser(import { createSseParser } from "../src/agent/sse.js")還原
+    const parse = createSseParser();
+    const frames = parse(written);
+    expect(frames).toEqual([{ event: "token", data: evil }]);
+  });
+
+  it("sendCredit 送出 event: credit 與正確 JSON", () => {
+    const hub = createStreamHub();
+    const res = fakeRes() as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
+    hub.attach("s1", res as never);
+    hub.sendCredit("s1", { remainingMs: 1500, grace: true, tickCount: 2, spentAtomic: "2000" });
+
+    const written = res.write.mock.calls.map((c) => String(c[0])).join("");
+    expect(written).toContain("event: credit");
+    expect(written).toContain('"remainingMs":1500');
+
+    const parse = createSseParser();
+    expect(parse(written)).toEqual([
+      { event: "credit", data: '{"remainingMs":1500,"grace":true,"tickCount":2,"spentAtomic":"2000"}' },
+    ]);
   });
 });
 
