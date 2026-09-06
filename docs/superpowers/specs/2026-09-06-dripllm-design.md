@@ -594,6 +594,7 @@ supertest + **假 facilitator**(Express,`/verify`、`/settle`、`/supported` 直
 | facilitator gas 耗盡 | 自架需自行維護 AVAX 餘額 | 錯誤訊息明確指向此原因(見 §7) |
 | EIP-3009 路徑出狀況 | 主要 transfer method 依賴 Fuji USDC 的 `transferWithAuthorization` | permit2 為可用備援,但**有前置條件**,見 §9.1 |
 | hook 拋錯導致付款已結算但 session 未建立 | 見 §2.5 殘留風險 | PoC 接受;agent 重試一次後明確報錯 |
+| `/stream` 的 bearer sessionId | 授權 = 持有 token(UUID,不可列舉);持有者可佔據唯一連線至額度到期,但無法延長(payer 綁定擋住) | PoC 接受。傳輸採 `X-Drip-Session` header 而非 query string,消除 proxy/access-log 洩漏面;威脅模型為本機/測試網 |
 
 ### 9.1 permit2 備援的前置條件
 
