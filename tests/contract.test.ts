@@ -91,12 +91,12 @@ describe("POST /tick —— 付款閘門", () => {
 
 describe("GET /stream —— session 為門票", () => {
   it("未知 sessionId 回 404", async () => {
-    const res = await request(app).get("/stream").query({ sessionId: "never-paid" });
+    const res = await request(app).get("/stream").set("X-Drip-Session", "never-paid");
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/session/);
   });
 
-  it("缺少 sessionId 參數回 400", async () => {
+  it("缺少 X-Drip-Session header 回 400", async () => {
     const res = await request(app).get("/stream");
     expect(res.status).toBe(400);
   });
@@ -144,9 +144,9 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
     expect(fake.settleCount()).toBe(2);
 
     // then() 觸發送出第一條,第二條在其存續期內到達
-    const first = request(app).get("/stream").query({ sessionId: "paid-dup" });
+    const first = request(app).get("/stream").set("X-Drip-Session", "paid-dup");
     const firstDone = first.then((r) => r);
-    const second = await request(app).get("/stream").query({ sessionId: "paid-dup" });
+    const second = await request(app).get("/stream").set("X-Drip-Session", "paid-dup");
     expect(second.status).toBe(409);
     const firstRes = await firstDone;
     expect(firstRes.status).toBe(200);
@@ -161,7 +161,7 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
     expect(paid.status).toBe(200);
     expect(fake.settleCount()).toBe(3);
 
-    const res = await request(app).get("/stream").query({ sessionId: "paid-cut" });
+    const res = await request(app).get("/stream").set("X-Drip-Session", "paid-cut");
     expect(res.status).toBe(200);
     expect(String(res.headers["content-type"])).toContain("text/event-stream");
 
@@ -189,7 +189,7 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
     expect(fake.settleCount()).toBe(3);
 
     // 剪線後 session 已自帳本移除,stream 回 404
-    const stream = await request(app).get("/stream").query({ sessionId: "paid-cut" });
+    const stream = await request(app).get("/stream").set("X-Drip-Session", "paid-cut");
     expect(stream.status).toBe(404);
   });
 
@@ -202,7 +202,7 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
     expect(paid.status).toBe(200);
     expect(fake.settleCount()).toBe(4);
 
-    const stream = request(app).get("/stream").query({ sessionId: "paid-ext" });
+    const stream = request(app).get("/stream").set("X-Drip-Session", "paid-ext");
     const streamDone = stream.then((r) => r);
     // 讓第一筆 tick 的串流先跑起來
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -231,7 +231,7 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
       .set("PAYMENT-SIGNATURE", paymentHeader(reqs, AGENT));
     expect(paid.status).toBe(200);
 
-    const stream = request(app).get("/stream").query({ sessionId: "paid-abort" });
+    const stream = request(app).get("/stream").set("X-Drip-Session", "paid-abort");
     const done = stream.then(
       () => null,
       () => null,
@@ -262,7 +262,7 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
     expect(fake.settleCount()).toBe(8);
 
     // hook 拒絕延長:tickCount 仍是 1,spentAtomic 仍是第一次的 1000
-    const res = await request(app).get("/stream").query({ sessionId: "paid-mismatch" });
+    const res = await request(app).get("/stream").set("X-Drip-Session", "paid-mismatch");
     expect(res.status).toBe(200);
     const frames = parseSse(res.text);
     const cut = frames.filter((f) => f.event === "cut");

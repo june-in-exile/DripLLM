@@ -54,9 +54,11 @@ export async function buildApp(config: AppConfig): Promise<Express> {
   });
 
   app.get("/stream", (req: Request, res: Response) => {
-    const sessionId = String(req.query.sessionId ?? "");
+    // sessionId 視為 bearer token(spec §2.2),經 header 傳輸 ——
+    // 放 query string 會漏進 proxy/access logs,助長劫持。
+    const sessionId = req.header("X-Drip-Session");
     if (!sessionId) {
-      res.status(400).json({ error: "缺少 sessionId 參數" });
+      res.status(400).json({ error: "缺少 X-Drip-Session header" });
       return;
     }
     const session = registry.getStore().get(sessionId);
