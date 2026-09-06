@@ -1,0 +1,58 @@
+- generic [active] [ref=f2e1]:
+  - region "�訫蔣�� 1:摰帋���◢��" [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - heading "DripLLM" [level=1] [ref=f2e5]
+      - generic [ref=f2e6]: x402 v2 繚 scheme v2-eip155-exact Avalanche Fuji 繚 eip155:43113 Snowman finality �� 1s 繚 gas �条� 皜祈岫蝬� USDC 繚 6 decimals
+    - paragraph [ref=f2e7]:
+      - text: 霈𤘪��㕑�鞎餃抅蝷舘身�賜�撠誩��刻�靘𥟇���,�賢�
+      - strong [ref=f2e8]: 璈笔膥摰Ｘ��厩��嗉祥
+      - text: �婙�� ���隞䁅祥�齿��刻�,�靝�撠梯◤�芰���
+    - generic [ref=f2e9]:
+      - generic [ref=f2e10]:
+        - generic [ref=f2e11]:
+          - generic [ref=f2e12]: �誯�
+          - paragraph [ref=f2e13]:
+            - text: �單𤣰鞎餃停敺堒�撱箏董�毺頂蝯晞���瘚���䔄蟡具���靽∪��嗚����甈曄�霅啜��俈閰僐��
+            - strong [ref=f2e14]: �坔��鞉𧋦��恥�嗆彍�⊿�,�臬𤐄摰𡁻�瑼�
+            - text: �婙�� 憭批��豢𤧅敺埈�,銝��衤犖頝𤏸䌊�嗆芋�讠��支��剹��
+          - paragraph [ref=f2e15]:
+            - text: 韏圈�蹱�頝�,靘𥟇���蘨��閬�
+            - strong [ref=f2e16]: 銝��𧢲𤣰甈曉𧑐���牐�畾� middleware
+            - text: �� �鞉𧋦蝯鞉�銋笔�敺𦯀�:撠誩��芣沲靘𥟇�����笔祕�鞉𧋦��
+            - strong [ref=f2e17]: GPU 鋡思��函����
+            - text: ",銝齿糓 token �詻��"
+        - generic [ref=f2e18]:
+          - generic [ref=f2e19]: 銝��讠′�羓�
+          - paragraph [ref=f2e20]:
+            - text: ��瑼餅��㗇�憭�,��
+            - strong [ref=f2e21]: �偦�
+            - text: 鈭�:瘥誩�见恥�園�敺埈�銝��贝�鈭� USDC ��椙���� 撠滢犖憿𧼮恥�園�蹱糓甇餌庖;撠� agent 銝齿糓 �婙�� agent �砌�撠望糓鋡怎�撘譍�撱箏枂靘����
+      - generic [ref=f2e22]:
+        - generic [ref=f2e23]:
+          - text: 銝脫�閮�祥
+          - generic [ref=f2e24]: 隤唳㗁�娪◢��
+        - generic [ref=f2e25]:
+          - generic [ref=f2e26]:
+            - text: 銝��� request/response �� per-request x402 撠勗�鈭�����厩𣶹�鞟�獢����
+            - strong [ref=f2e27]: 頝穃末撟曉��条�銝脫�
+            - text: ��
+          - generic [ref=f2e28]:
+            - generic [ref=f2e29]: �湔挾�鞉𤣰
+            - generic [ref=f2e30]: 鞎瑟䲮�踵�撠齿��寥◢�� �婙�� 隞䀝��Ｗ��寡���
+          - generic [ref=f2e31]:
+            - generic [ref=f2e32]: ��策敺峕𤣰
+            - generic [ref=f2e33]: 鞈�䲮�踵���縑憸券麬 �婙�� ���鈭���嫣�隞�
+          - generic [ref=f2e34]:
+            - generic [ref=f2e35]: ���銝��潔���
+            - generic [ref=f2e36]:
+              - text: 隞颱��孵��虫��寧��嗪麬
+              - strong [ref=f2e37]: �賭�頞��銝���
+  - generic [ref=f2e38]:
+    - tablist "�訫蔣��" [ref=f2e39]:
+      - tab "01 摰帋�" [ref=f2e40] [cursor=pointer]
+      - tab "02 �毺�" [ref=f2e41] [cursor=pointer]
+      - tab "03 ��彍" [ref=f2e42] [cursor=pointer]
+    - generic [ref=f2e43]:
+      - generic [ref=f2e44]: �� �� ���
+      - button "銝𠹺���" [disabled] [ref=f2e45]: ��
+      - button "銝衤���" [ref=f2e46] [cursor=pointer]: ��

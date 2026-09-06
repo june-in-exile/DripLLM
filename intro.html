@@ -1,0 +1,746 @@
+<title>DripLLM 按秒計費</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --ground: #ECEFF1;
+    --surface: #FFFFFF;
+    --surface-2: #E3E8EC;
+    --ink: #10171D;
+    --ink-2: #4E5F6D;
+    --ink-3: #788996;
+    --rule: #C8D1D8;
+    --accent: #0E7C6E;
+    --accent-ink: #0A5B51;
+    --accent-soft: rgba(14, 124, 110, 0.10);
+    --alert: #B23A26;
+    --alert-soft: rgba(178, 58, 38, 0.10);
+    --indigo: #1E3E63;
+    --shadow: 0 1px 2px rgba(16, 23, 29, .06), 0 18px 40px -24px rgba(16, 23, 29, .35);
+
+    --f-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+    --f-body: "Source Sans 3", -apple-system, "Segoe UI", sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D1317;
+      --surface: #141C22;
+      --surface-2: #1D272E;
+      --ink: #E7EDF1;
+      --ink-2: #96A6B2;
+      --ink-3: #6D7E8B;
+      --rule: #2A3740;
+      --accent: #35B7A5;
+      --accent-ink: #7FD9CC;
+      --accent-soft: rgba(53, 183, 165, 0.13);
+      --alert: #E5775F;
+      --alert-soft: rgba(229, 119, 95, 0.13);
+      --indigo: #9CC0E2;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 18px 40px -24px rgba(0, 0, 0, .9);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D1317;
+    --surface: #141C22;
+    --surface-2: #1D272E;
+    --ink: #E7EDF1;
+    --ink-2: #96A6B2;
+    --ink-3: #6D7E8B;
+    --rule: #2A3740;
+    --accent: #35B7A5;
+    --accent-ink: #7FD9CC;
+    --accent-soft: rgba(53, 183, 165, 0.13);
+    --alert: #E5775F;
+    --alert-soft: rgba(229, 119, 95, 0.13);
+    --indigo: #9CC0E2;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 18px 40px -24px rgba(0, 0, 0, .9);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.55;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding: 22px 20px 26px;
+  }
+
+  /* ---------- deck shell ---------- */
+  .deck {
+    width: min(1120px, 100%);
+    aspect-ratio: 16 / 9;
+    max-height: calc(100vh - 110px);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .slide {
+    position: absolute;
+    inset: 0;
+    padding: clamp(22px, 3.2vw, 42px) clamp(28px, 4vw, 54px);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(8px, 1.3vw, 16px);
+    overflow-y: auto;
+  }
+
+  .slide[hidden] { display: none !important; }
+
+  /* ---------- shared type ---------- */
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: clamp(10px, .82vw, 12px);
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .eyebrow .num { color: var(--ink-3); }
+
+  h1, h2 {
+    font-family: var(--f-display);
+    font-weight: 800;
+    color: var(--indigo);
+    margin: 0;
+    text-wrap: balance;
+    letter-spacing: -.015em;
+    line-height: 1.08;
+  }
+  h1 { font-size: clamp(38px, 5.1vw, 68px); }
+  h2 { font-size: clamp(24px, 2.9vw, 38px); }
+
+  .lede {
+    font-size: clamp(15px, 1.36vw, 19px);
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0;
+  }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .fine {
+    font-size: clamp(12px, 1.02vw, 14px);
+    color: var(--ink-2);
+    margin: 0;
+  }
+  .fine strong { color: var(--ink); font-weight: 600; }
+
+  code, .mono { font-family: var(--f-mono); font-size: .88em; }
+  code {
+    background: var(--surface-2);
+    padding: .1em .38em;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+
+  /* ---------- slide 1 ---------- */
+  .title-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    border-bottom: 2px solid var(--indigo);
+    padding-bottom: clamp(10px, 1.2vw, 16px);
+  }
+  .title-row h1 { color: var(--ink); }
+  .stamp {
+    font-family: var(--f-mono);
+    font-size: clamp(10px, .84vw, 12px);
+    line-height: 1.7;
+    color: var(--ink-2);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .stamp b { color: var(--accent-ink); font-weight: 700; }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: clamp(20px, 3vw, 44px);
+    align-items: start;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .barrier {
+    border-left: 3px solid var(--alert);
+    padding-left: clamp(12px, 1.4vw, 18px);
+  }
+  .barrier .fine + .fine { margin-top: .5em; }
+
+  /* risk ledger: three ways to bill a stream */
+  .ledger { display: flex; flex-direction: column; }
+  .ledger-row {
+    display: grid;
+    grid-template-columns: minmax(84px, 1fr) 1.5fr;
+    gap: clamp(10px, 1.6vw, 22px);
+    align-items: baseline;
+    padding: clamp(9px, 1.1vw, 14px) 0;
+    border-top: 1px solid var(--rule);
+  }
+  .ledger-row:first-of-type { border-top: none; padding-top: 0; }
+  .ledger-row .way {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(14px, 1.28vw, 18px);
+    color: var(--ink);
+  }
+  .ledger-row .who {
+    font-size: clamp(12.5px, 1.06vw, 15px);
+    color: var(--ink-2);
+  }
+  .ledger-row.win {
+    background: var(--accent-soft);
+    border-top: 1px solid var(--accent);
+    border-bottom: 1px solid var(--accent);
+    margin-top: clamp(9px, 1.1vw, 14px);
+    padding: clamp(12px, 1.4vw, 18px) clamp(12px, 1.4vw, 18px);
+    border-radius: 3px;
+  }
+  .ledger-row.win .way { color: var(--accent-ink); }
+  .ledger-row.win .who { color: var(--ink); }
+  .ledger-cap {
+    font-family: var(--f-mono);
+    font-size: clamp(9.5px, .8vw, 11px);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 10px;
+  }
+
+  /* ---------- slide 2 ---------- */
+  .rail {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: stretch;
+    gap: clamp(6px, .9vw, 12px);
+    background: var(--surface-2);
+    border-radius: 3px;
+    padding: clamp(8px, 1vw, 14px);
+  }
+  .node {
+    padding: clamp(7px, .8vw, 11px) clamp(9px, 1vw, 14px);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+  }
+  .node .nm {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: clamp(12.5px, 1.1vw, 15px);
+    color: var(--ink);
+  }
+  .node .rl {
+    font-family: var(--f-mono);
+    font-size: clamp(9.5px, .82vw, 11.5px);
+    color: var(--ink-2);
+    line-height: 1.45;
+  }
+  .node.cut { border-color: var(--alert); background: var(--alert-soft); }
+  .node.cut .nm { color: var(--alert); }
+  .arrow {
+    align-self: center;
+    font-family: var(--f-mono);
+    font-size: clamp(12px, 1.1vw, 15px);
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .flow { display: flex; flex-direction: column; }
+  .step {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: clamp(8px, .9vw, 12px);
+    align-items: baseline;
+    padding: clamp(3px, .5vw, 6px) 0;
+    border-bottom: 1px dotted var(--rule);
+    font-size: clamp(12px, 1.04vw, 14.5px);
+    color: var(--ink-2);
+  }
+  .step:last-child { border-bottom: none; }
+  .step b { color: var(--ink); font-weight: 600; }
+  .step .k {
+    font-family: var(--f-mono);
+    font-size: clamp(10px, .84vw, 12px);
+    font-weight: 700;
+    color: var(--accent-ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .step.cut .k { color: var(--alert); }
+  .step.cut b { color: var(--alert); }
+
+  table { border-collapse: collapse; width: 100%; }
+  th, td {
+    text-align: left;
+    padding: clamp(6px, .72vw, 9px) 10px clamp(6px, .72vw, 9px) 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: clamp(12px, 1.02vw, 14.5px);
+    vertical-align: baseline;
+  }
+  th {
+    font-family: var(--f-mono);
+    font-size: clamp(9.5px, .8vw, 11px);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 700;
+    border-bottom-color: var(--ink-3);
+  }
+  td { color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-family: var(--f-mono); font-size: clamp(11px, .95vw, 13px); }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  .pill {
+    display: inline-block;
+    font-family: var(--f-mono);
+    font-size: clamp(9.5px, .8vw, 11px);
+    font-weight: 700;
+    letter-spacing: .06em;
+    padding: .18em .5em;
+    border-radius: 2px;
+  }
+  .pill.paid { background: var(--accent); color: var(--surface); }
+  .pill.free { background: var(--surface-2); color: var(--ink-2); }
+
+  .note {
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: clamp(9px, 1vw, 13px) clamp(11px, 1.2vw, 15px);
+    border-radius: 0 3px 3px 0;
+  }
+
+  /* why-avax strip (slide 2) */
+  .whyavax {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3px clamp(8px, 1vw, 14px);
+    border-top: 1px solid var(--rule);
+    padding-top: clamp(3px, .5vw, 6px);
+  }
+  .whyavax .cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .whyavax .k {
+    font-family: var(--f-mono);
+    font-size: clamp(9px, .76vw, 10.5px);
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: var(--accent-ink);
+  }
+  .whyavax .d {
+    font-size: clamp(10px, .86vw, 12px);
+    line-height: 1.4;
+    color: var(--ink-2);
+  }
+
+  /* ---------- slide 3 ---------- */
+  .window {
+    display: flex;
+    align-items: baseline;
+    gap: clamp(10px, 1.2vw, 16px);
+    border-top: 2px solid var(--alert);
+    padding-top: clamp(8px, .9vw, 12px);
+  }
+  .window .big {
+    font-family: var(--f-display);
+    font-weight: 800;
+    font-size: clamp(42px, 5.4vw, 72px);
+    line-height: .92;
+    color: var(--alert);
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .window .lbl {
+    font-size: clamp(12px, 1.04vw, 14.5px);
+    color: var(--ink-2);
+    max-width: 28ch;
+  }
+  .window .lbl b { color: var(--ink); font-weight: 600; }
+
+  .term {
+    background: var(--ink);
+    color: #E7EDF1;
+    border-radius: 3px;
+    padding: clamp(11px, 1.3vw, 17px) clamp(12px, 1.4vw, 18px);
+    font-family: var(--f-mono);
+    font-size: clamp(10.5px, .92vw, 13px);
+    line-height: 1.85;
+    overflow-x: auto;
+  }
+  :root[data-theme="dark"] .term { background: #070B0E; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .term { background: #070B0E; }
+  }
+  .term .t-dim { color: #8FA1AE; }
+  .term .t-ok { color: #4FD0BC; }
+  .term .t-warn { color: #E8A33C; }
+  .term .t-cut { color: #F0806A; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+  .chip {
+    font-family: var(--f-mono);
+    font-size: clamp(9.5px, .82vw, 11.5px);
+    padding: .28em .6em;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .chip b { color: var(--ink); font-weight: 700; }
+
+  .warn-strip {
+    font-size: clamp(11.5px, .98vw, 13.5px);
+    color: var(--alert);
+    border-top: 1px solid var(--rule);
+    padding-top: clamp(8px, .9vw, 12px);
+  }
+  .warn-strip b { font-weight: 600; }
+
+  .grow { flex: 1; min-height: 0; }
+  .stack { display: flex; flex-direction: column; gap: clamp(10px, 1.3vw, 16px); min-width: 0; }
+
+  /* ---------- controls ---------- */
+  .bar {
+    width: min(1120px, 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot {
+    appearance: none;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-3);
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .dot:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .dot[aria-current="true"] {
+    background: var(--indigo);
+    border-color: var(--indigo);
+    color: var(--surface);
+  }
+  .nav { display: flex; gap: 6px; align-items: center; }
+  .nav button {
+    appearance: none;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink-2);
+    font-family: var(--f-mono);
+    font-size: 13px;
+    width: 30px;
+    height: 28px;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .nav button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+  .nav button:disabled { opacity: .35; cursor: default; }
+  .hint {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 760px) {
+    .deck { aspect-ratio: auto; height: auto; max-height: none; }
+    .slide { position: static; }
+    .split { grid-template-columns: 1fr; }
+    .rail { grid-template-columns: 1fr; }
+    .whyavax { grid-template-columns: 1fr 1fr; }
+    .arrow { transform: rotate(90deg); justify-self: center; }
+    .hint { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @page { size: A4 landscape; margin: 0; }
+
+  @media print {
+    body { background: #fff; padding: 0; gap: 0; }
+    .bar { display: none; }
+    .deck { box-shadow: none; border: none; height: auto; aspect-ratio: auto; max-height: none; width: 100%; }
+    .slide, .slide[hidden] { position: static; display: flex !important; page-break-after: always; }
+    .slide:last-of-type { page-break-after: auto; }
+  }
+</style>
+
+<div class="deck">
+
+  <!-- ============ 1 ============ -->
+  <section class="slide" id="s1" aria-label="投影片 1:定位與風險">
+    <div class="title-row">
+      <h1>DripLLM</h1>
+      <div class="stamp">
+        x402 v2 · scheme <b>v2-eip155-exact</b><br>
+        Avalanche Fuji · <b>eip155:43113</b><br>
+        Snowman finality <b>≈ 1s</b> · gas 厘級<br>
+        測試網 USDC · 6 decimals
+      </div>
+    </div>
+
+    <p class="lede">
+      讓沒有計費基礎設施的小型推論供應商,能對<strong>機器客戶按秒收費</strong> —— 持續付費才有推論,停付就被剪線。
+    </p>
+
+    <div class="split">
+      <div class="stack">
+        <div>
+          <div class="eyebrow">問題</div>
+          <p class="fine" style="margin-top:.5em">
+            想收費就得先建帳號系統、金流、發票、授信催收、退款爭議、防詐。
+            <strong>這套成本與客戶數無關,是固定門檻</strong> —— 大公司攤得掉,一個人跑自架模型的攤不掉。
+          </p>
+          <p class="fine" style="margin-top:.7em">
+            走這條路,供應商只需要<strong>一個收款地址加一段 middleware</strong>。
+            成本結構也對得上:小型自架供應商的真實成本是 <strong>GPU 被佔用的時間</strong>,不是 token 數。
+          </p>
+        </div>
+        <div class="barrier">
+          <div class="eyebrow" style="color:var(--alert)">一個硬邊界</div>
+          <p class="fine" style="margin-top:.5em">
+            門檻沒有消失,是<strong>換邊</strong>了:每個客戶都得有一個裝了 USDC 的錢包。
+            對人類客戶這是死穴;對 agent 不是 —— agent 本來就是被程式佈建出來的。
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <div class="eyebrow">串流計費 <span class="num">誰承擔風險</span></div>
+        <div class="ledger">
+          <div class="ledger-cap">一般 request/response 用 per-request x402 就夠了。沒有現成答案的是<strong>跑好幾分鐘的串流</strong>。</div>
+          <div class="ledger-row">
+            <span class="way">整段預收</span>
+            <span class="who">買方承擔對手方風險 —— 付了錢對方跑掉</span>
+          </div>
+          <div class="ledger-row">
+            <span class="way">先給後收</span>
+            <span class="who">賣方承擔授信風險 —— 送完了對方不付</span>
+          </div>
+          <div class="ledger-row win">
+            <span class="way">切成一格一格</span>
+            <span class="who">任一方對另一方的曝險<strong>都不超過一格</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section class="slide" id="s2" hidden aria-label="投影片 2:運作原理">
+    <div>
+      <div class="eyebrow"><span class="num">02</span> 運作原理</div>
+      <h2 style="margin-top:.28em">一筆付款買一段時間,watchdog 負責剪線</h2>
+    </div>
+
+    <div class="rail">
+      <div class="node">
+        <div class="nm">買方 agent</div>
+        <div class="rl">src/agent/ · 錢包、花費上限<br>餘額將盡時補款</div>
+      </div>
+      <div class="arrow">──▶</div>
+      <div class="node cut">
+        <div class="nm">賣方 server ✂</div>
+        <div class="rl">src/server/ · session 帳本<br>watchdog、SSE 串流</div>
+      </div>
+      <div class="arrow">──▶</div>
+      <div class="node">
+        <div class="nm">facilitator</div>
+        <div class="rl">自架 x402-rs (Docker)<br>驗簽 + Fuji 上結算</div>
+      </div>
+    </div>
+
+    <div class="whyavax">
+      <div class="eyebrow" style="grid-column:1 / -1; margin:0">為什麼選 Avalanche</div>
+      <div class="cell">
+        <span class="k">次秒級確定性</span>
+        <span class="d">共識 ≈1s · settle 實測 7–11s</span>
+      </div>
+      <div class="cell">
+        <span class="k">gas 厘級</span>
+        <span class="d">多次補款不被手續費吃垮</span>
+      </div>
+      <div class="cell">
+        <span class="k">EVM 相容</span>
+        <span class="d">EIP-712 / ERC-20 工具鏈直接沿用</span>
+      </div>
+      <div class="cell">
+        <span class="k">L1 擴展</span>
+        <span class="d">日後可佈建專屬鏈,手續費自訂</span>
+      </div>
+    </div>
+
+    <div class="split grow">
+      <div>
+        <div class="eyebrow">一次 tick 的資料流</div>
+        <div class="flow">
+          <div class="step"><span class="k">1</span><span><code>POST /tick</code> 沒帶付款 → server 回 <b>HTTP 402</b> 附價格與收款資產</span></div>
+          <div class="step"><span class="k">2</span><span>agent 簽一筆 USDC 付款,塞進 <code>X-PAYMENT</code> header 重送</span></div>
+          <div class="step"><span class="k">3</span><span>facilitator 驗證簽章,並在 Fuji 上<b>結算</b></span></div>
+          <div class="step"><span class="k">4</span><span><code>onAfterSettle</code> 建立 session,回 <code>{ sessionId, accepted }</code></span></div>
+          <div class="step"><span class="k">5</span><span>agent 用該 sessionId 開 <code>GET /stream</code>,<b>token 開始流動</b></span></div>
+          <div class="step"><span class="k">6</span><span>餘額低於門檻時自動再送一筆 tick,把 <code>paidUntil</code> 往後延</span></div>
+          <div class="step cut"><span class="k">✂</span><span>逾期又超過寬限 → server 送 <code>event: cut</code>,<b>主動關閉連線</b></span></div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div>
+          <div class="eyebrow">三個端點,只有一個收費</div>
+          <table>
+            <thead><tr><th>端點</th><th>x402</th><th>職責</th></tr></thead>
+            <tbody>
+              <tr><td>POST /tick</td><td><span class="pill paid">收費</span></td><td>付一筆 → 建立或延長 session</td></tr>
+              <tr><td>GET /stream</td><td><span class="pill free">免費</span></td><td>SSE,session 活著就吐 token</td></tr>
+              <tr><td>GET /health</td><td><span class="pill free">免費</span></td><td>啟動檢查與 demo 腳本</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">
+          <p class="fine">
+            <strong><code>/stream</code> 免費不構成漏洞:session 只有付過錢才存在。</strong>
+            這讓 x402 middleware 留在它天生擅長的 per-request 位置,SSE 那條完全不碰付款邏輯。
+          </p>
+        </div>
+        <p class="fine">
+          <strong>為什麼要長連線:</strong>若每個 tick 都是獨立 request,「斷流」不過是 agent 自己 break 迴圈,
+          server 從頭到尾沒行使任何權力。長連線下 agent 還連著、還想要,線卻被剪了。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section class="slide" id="s3" hidden aria-label="投影片 3:參數與 Demo">
+    <div>
+      <div class="eyebrow"><span class="num">03</span> 參數與 Demo 觀察重點</div>
+      <h2 style="margin-top:.28em">有意義的量只有一個:曝險窗口</h2>
+    </div>
+
+    <div class="split grow">
+      <div class="stack">
+        <table>
+          <thead><tr><th>參數</th><th>值</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr><td>CREDIT_PER_TICK_MS</td><td class="num">25000</td><td>一筆付款買到的串流時間(實測 settle 7.4–10.6s)</td></tr>
+            <tr><td>TOPUP_THRESHOLD_MS</td><td class="num">15000</td><td>餘額低於此值即補款</td></tr>
+            <tr><td>GRACE_MS</td><td class="num">2000</td><td>逾期後才剪線的寬限</td></tr>
+            <tr><td>PRICE_PER_TICK_ATOMIC</td><td class="num">1000</td><td>0.001 USDC</td></tr>
+            <tr><td>MAX_SPEND_ATOMIC</td><td class="num">50000</td><td>0.05 USDC,約 50 個 tick</td></tr>
+          </tbody>
+        </table>
+        <p class="fine">
+          agent 是在<strong>餘額將盡時</strong>補款,不是固定間隔付款 —— 否則網路與結算延遲會讓餘額逐 tick 向下漂移,
+          幾個 tick 後就自行斷流。所有參數經 <code>src/config.ts</code> 以 zod 驗證後注入,無硬編碼。
+        </p>
+        <div class="chips">
+          <span class="chip"><b>@x402/express</b> · core · evm · fetch</span>
+          <span class="chip"><b>viem</b></span>
+          <span class="chip">自架 <b>x402-rs</b></span>
+          <span class="chip">USDC <b>0x5425…Bc65</b></span>
+          <span class="chip">EIP-712 domain <b>USD Coin</b></span>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="window">
+          <span class="big">17–35<span style="font-size:.42em; letter-spacing:0"> 秒</span></span>
+          <span class="lbl">從 <b>停止付款</b> 到 <b>服務真的停下來</b> 的曝險窗口;其中真正沒收到錢的流,只有 2s 寬限。</span>
+        </div>
+
+        <div class="term">
+          <span class="t-dim">[server]</span> session 7f3a · 餘額 1.2s<br>
+          <span class="t-dim">[server]</span> session 7f3a · 餘額 0.4s<br>
+          <span class="t-dim">[server]</span> session 7f3a · <span class="t-warn">⚠ 逾期,寬限 2.0s</span><br>
+          <span class="t-dim">[server]</span> session 7f3a · <span class="t-cut">✂ 切斷串流</span>
+        </div>
+
+        <p class="fine">
+          <strong>第一次 Ctrl-C:</strong>agent 停止付款,但<strong>保持連線</strong>、繼續讀 stream。約 17～35 秒後 server 主動剪線,
+          第二次 Ctrl-C 才真正退出。第一次不斷線是整個 demo 成立的關鍵 —— agent 仍連著、仍在等待,<strong>線是 server 剪的</strong>。
+        </p>
+
+        <p class="warn-strip">
+          <b>⚠ 僅用測試網。</b>AVAX 從 Core Wallet console 領,USDC 從 Circle faucet 領,切勿使用真實資產。
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="bar">
+  <div class="dots" role="tablist" aria-label="投影片">
+    <button class="dot" type="button" data-go="0" role="tab" aria-current="true">01 定位</button>
+    <button class="dot" type="button" data-go="1" role="tab" aria-current="false">02 原理</button>
+    <button class="dot" type="button" data-go="2" role="tab" aria-current="false">03 參數</button>
+  </div>
+  <div class="nav">
+    <span class="hint">← → 切換</span>
+    <button type="button" id="prev" aria-label="上一頁">←</button>
+    <button type="button" id="next" aria-label="下一頁">→</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var slides = [document.getElementById('s1'), document.getElementById('s2'), document.getElementById('s3')];
+    var dots = Array.prototype.slice.call(document.querySelectorAll('.dot'));
+    var prev = document.getElementById('prev');
+    var next = document.getElementById('next');
+    var i = 0;
+
+    function show(n) {
+      i = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach(function (s, k) { s.hidden = k !== i; });
+      dots.forEach(function (d, k) { d.setAttribute('aria-current', String(k === i)); });
+      prev.disabled = i === 0;
+      next.disabled = i === slides.length - 1;
+    }
+
+    dots.forEach(function (d) {
+      d.addEventListener('click', function () { show(Number(d.dataset.go)); });
+    });
+    prev.addEventListener('click', function () { show(i - 1); });
+    next.addEventListener('click', function () { show(i + 1); });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { show(i + 1); e.preventDefault(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { show(i - 1); e.preventDefault(); }
+      else if (e.key === 'Home') { show(0); }
+      else if (e.key === 'End') { show(slides.length - 1); }
+    });
+
+    show(0);
+  })();
+</script>
