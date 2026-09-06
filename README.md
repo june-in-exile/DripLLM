@@ -85,13 +85,45 @@ DripLLM 是一個最小可跑專案。買方 agent 掛在一條 SSE 串流上,�
 
 鏈上驗證與結算交給 facilitator,不用自己寫合約。
 
-## 技術選型
+## 技術棧
 
-- **協議:** x402 **v2** —— `@x402/express`、`@x402/core`、`@x402/evm`、`@x402/fetch` 搭 `viem`
+### 語言與執行環境
+
+- **Node.js + TypeScript(strict、`noUncheckedIndexedAccess`),ESM** —— `tsx` 直接執行,沒有 build 步驟
+- **Express 5** —— 賣方 server 的 HTTP 層,三個端點 `/tick`、`/stream`、`/health` 都在它上面
+- **zod** —— 所有環境變數與計費參數經 [src/config.ts](src/config.ts) 驗證後注入,無硬編碼
+
+### 付款協議:x402 v2
+
+- **server 端**([src/server/payment.ts](src/server/payment.ts)):`@x402/express` 把 x402 middleware 掛在 `/tick` 收 `X-PAYMENT` header,`@x402/core/server` + `@x402/evm/exact/server` 定義並結算付款,結果走 `X-PAYMENT-RESPONSE` header 回給買方
+- **agent 端**([src/agent/wallet.ts](src/agent/wallet.ts)):`@x402/fetch` 攔截 402、讀價格與資產、自動簽付款重送;`@x402/evm/exact/client` + **viem** 建構付款並做 EIP-712 簽章,`viem` 同時是買方錢包層
 - **結算方式:** scheme `v2-eip155-exact`,每個 tick 一筆獨立付款,邏輯最單純
-- **鏈:** Avalanche Fuji 測試網,CAIP-2 識別字 `eip155:43113`
+
+### 鏈:Avalanche Fuji 測試網
+
+- Avalanche 本身是 L1 區塊鏈;本專案用的是它內建的 EVM 鏈 **C-Chain** 測試網(Fuji),CAIP-2 識別字 `eip155:43113`,EIP-1559
 - **資產:** 測試網 USDC `0x5425890298aed601595a70AB815c96711a31Bc65`,6 decimals
-- **facilitator:** 自架 [x402-rs](https://github.com/x402-rs/x402-rs),Docker 一鍵起
+- 沒有用到 Avalanche L1(應用專用鏈,舊稱 subnets)—— C-Chain 的 ERC-20 結算就夠了
+
+#### 為什麼選 Avalanche
+
+在「以秒計費、即時剪線」的高頻串流場景,Avalanche 解決了微支付閘道最棘手的物理限制:
+
+- **次秒級確定性,讓秒級補款與剪線可行。** Snowman 共識約 0.8～1.5 秒達成確定性結算,短於 `TOPUP_THRESHOLD_MS` 與 `GRACE_MS`(皆 2s)—— 補款能在餘額燒盡前落地,剪線決策不用等以太坊 L1 那種數分鐘的經濟最終性,賣方不必墊付高額信用額度
+- **極低 gas,讓高頻小額支付划算。** 一場數分鐘的串流會觸發多次補款,C-Chain 手續費低至厘級,微支付不會被網路費反噬
+- **成熟 EVM 相容性。** 完全相容 EVM,直接沿用 EIP-712 簽章驗證與標準 ERC-20 呼叫,x402 scheme `v2-eip155-exact` 開箱可用,自架 facilitator 不需從頭造輪子
+- **專屬鏈的擴展路徑。** 日後推論量暴增、微支付頻率更高,可佈建專屬 Avalanche L1(舊稱 Subnet)自訂手續費代幣甚至降至零,避免公共網路塞車影響推論即時性
+
+### facilitator:x402-rs(Docker)
+
+- 自架 [x402-rs](https://github.com/x402-rs/x402-rs),[docker-compose.yml](docker-compose.yml) 一鍵起、把 [facilitator/config.json](facilitator/config.json) 以唯讀掛載進容器
+- 職責:驗證付款簽章並在鏈上結算,不用自己寫合約
+- 選自架而非託管:`facilitator.x402.rs` 的託管實例不支援 Fuji,thirdweb 託管需綁第三方帳號且文件停在 v1。x402-rs 按 CAIP-2 chain id 泛用配置,加一個 `eip155:43113` 條目即可
+
+### 測試與驗證
+
+- **Vitest + supertest** —— 純函數單元測試 + HTTP 合約測試(搭假 facilitator),都不碰鏈
+- 覆蓋率門檻 80%(v8 provider,不含 `main.ts` 等進入點)
 
 > ⚠️ **僅用測試網。** AVAX 從 Core Wallet console 領,USDC 從 Circle faucet 領,切勿使用真實資產。facilitator 的 signer 錢包需自備 AVAX 支付 gas。
 
@@ -100,14 +132,12 @@ DripLLM 是一個最小可跑專案。買方 agent 掛在一條 SSE 串流上,�
 - **不要用 `x402-express`。** 那是 v1,已 deprecated 且僅接收 security patch,API 形狀與 network 識別字都與 v2 不同。多數第三方教學仍停在 v1 寫法,一律以 `coinbase/x402` repo 的 v2 範例為準。
 - **Fuji 的 USDC EIP-712 domain name 是 `USD Coin`,不是 `USDC`。** Base Sepolia 才是 `USDC`。填錯會導致簽章驗證失敗,而錯誤訊息不會指向此處。
 
-facilitator 也選擇自架而非託管:`facilitator.x402.rs` 的託管實例不支援 Fuji,thirdweb 託管需綁第三方帳號且文件停在 v1。x402-rs 按 CAIP-2 chain id 泛用配置,加一個 `eip155:43113` 條目即可。
-
 ## 參數
 
 | 參數 | 值 | 說明 |
 | --- | --- | --- |
-| `CREDIT_PER_TICK_MS` | `5000` | 一筆付款買到的串流時間 |
-| `TOPUP_THRESHOLD_MS` | `2000` | 餘額低於此值即補款 |
+| `CREDIT_PER_TICK_MS` | `25000` | 一筆付款買到的串流時間(2026-09-06 實測 Fuji settle 7.4-10.6s) |
+| `TOPUP_THRESHOLD_MS` | `15000` | 餘額低於此值即補款 |
 | `GRACE_MS` | `2000` | 逾期後 server 才剪線的寬限 |
 | `PRICE_PER_TICK_ATOMIC` | `1000` | 0.001 USDC |
 | `MAX_SPEND_ATOMIC` | `50000` | 0.05 USDC,約 50 個 tick |

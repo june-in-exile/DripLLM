@@ -336,7 +336,7 @@ agent                          server                      facilitator
 
 **停付至斷線的間隔 = 停付當下的剩餘餘額 + `GRACE_MS`。**
 
-以 §5 的暫定值(CREDIT 5s / TOPUP 2s / GRACE 2s)推算,停付當下餘額落在 2～5 秒,故間隔為 4～7 秒。**但 §5 尚未定案** —— 若 spike 量出的 settle 耗時迫使 `CREDIT_PER_TICK_MS` 上調,此區間需連同重算。
+以 §5 定案值(CREDIT 25s / TOPUP 15s / GRACE 2s)推算,停付當下餘額落在 15～25 秒,故**停付至斷線的間隔為 2～27 秒**。2026-09-06 實測:停付後 token 繼續流動至額度耗盡,寬限期內 agent 端顯示負餘額倒數(實測 -141ms → -1643ms),隨後 server 剪線。
 
 此範圍的變動性是刻意保留的 —— 讓每次 demo 略有不同,看起來像真的在燒餘額而非跑腳本。
 
@@ -353,12 +353,12 @@ server 端須將倒數輸出至終端,讓觀眾理解那幾秒不是當機:
 
 ## 5. 參數
 
-> **以下數值為暫定,須由 §8 的量測 spike 定案。** 目前的值是設計時估的,未經實測。若 settle wall-clock 實測為 4 秒,`CREDIT_PER_TICK_MS` 需自 5000 拉高至 20000 上下,並連動重算 §4 的時序、demo 節奏與 §10 的驗收標準 #5。
+> **已定案(2026-09-06,依 §8 量測 spike 實測)。** 402 challenge RTT 5.5ms;完整 tick wall-clock 7.4～10.6s(三次實測,鏈上 settle 主導)。門檻取實測最大 × 1.4(15s)並留有 4.4s 餘裕,credit 取 25s 兼顧 demo 節奏。若 Fuji 延遲顯著變化需重新量測。
 
-| 參數 | 暫定值 | 說明 |
+| 參數 | 定案值 | 說明 |
 | --- | --- | --- |
-| `CREDIT_PER_TICK_MS` | `5000` | 一筆付款買到的串流時間 |
-| `TOPUP_THRESHOLD_MS` | `2000` | 餘額低於此值即補款 |
+| `CREDIT_PER_TICK_MS` | `25000` | 一筆付款買到的串流時間(實測 settle 7.4-10.6s,須有餘裕) |
+| `TOPUP_THRESHOLD_MS` | `15000` | 餘額低於此值即補款(> settle 最大實測 10.6s) |
 | `GRACE_MS` | `2000` | 逾期後 server 才剪線的寬限 |
 | `PRICE_PER_TICK_ATOMIC` | `1000` | 0.001 USDC |
 | `MAX_SPEND_ATOMIC` | `50000` | 0.05 USDC,約 50 個 tick |
@@ -517,7 +517,9 @@ Node v26.5.0 實測 `typeof EventSource === "undefined"`,需 `--experimental-eve
 
 TDD:先寫測試(RED)、再實作(GREEN)、後重構。涵蓋率門檻 80%,掛在第 1、2 層,spike 與第 3 層排除計算。
 
-### 第 0 步 — 量測 spike(先於一切實作)
+### 第 0 步 — 量測 spike(**已於 2026-09-06 完成**,資料如下)
+
+實測結果:402 challenge RTT = 5.5ms(不碰鏈);完整 tick wall-clock = 10.6s / 8.6s / 7.4s。依實測定案 §5 參數(TOPUP 15s / CREDIT 25s)。量測併入 `scripts/smoke.ts` 的每 tick 記時,未建獨立 throwaway 腳本。
 
 **產出是三個數字,不是要保留的程式碼。**
 
@@ -628,7 +630,7 @@ await walletClient.sendTransaction({ to: tx.to, data: tx.data });
 2. `npm run server` 起得了賣方 server;facilitator 未啟動時拒絕啟動並給出明確訊息
 3. `npm run agent` 後,終端可見:每個 tick 的付款、自 `X-PAYMENT-RESPONSE` 讀出的 tx hash、累計花費(USDC)、以及持續流動的 token
 4. 第一次 Ctrl-C 後,agent 停止付款但保持連線,token 繼續流動數秒
-5. 經過「停付當下餘額 + `GRACE_MS`」後(以暫定參數為 4～7 秒,實際值依 §8 spike 定案),server 主動切斷,agent 端顯示連線已被 server 關閉,server 端顯示 `✂ 切斷串流` 且標示為 watchdog 剪線而非 agent 斷線
+5. 經過「停付當下餘額 + `GRACE_MS`」後(定案參數下為 2～27 秒,**2026-09-06 已實測通過**),server 主動切斷,agent 端顯示連線已被 server 關閉,server 端標示為 watchdog 剪線
 6. 將 `MAX_SPEND_ATOMIC` 調低後,agent 撞到上限自動停付,產生相同的斷流結果
 7. 單元測試與合約測試通過,涵蓋率 ≥ 80%
-8. §8 第 0 步的 spike 已執行,§5 參數已依實測值定案(或確認暫定值可行)
+8. ~~§8 第 0 步的 spike 已執行~~ **2026-09-06 已完成**,§5 參數已依實測定案

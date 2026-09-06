@@ -1,0 +1,114 @@
+- generic [ref=e1]:
+  - region "�訫蔣�� 2:�衤��毺�" [ref=e47]:
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]: "02"
+        - text: �衤��毺�
+      - heading "銝�蝑��甈曇眺銝�畾菜���,watchdog 鞎㰘痊�芰�" [level=2] [ref=e51]
+    - generic [ref=e52]:
+      - generic [ref=e53]:
+        - generic [ref=e54]: 鞎瑟䲮 agent
+        - generic [ref=e55]: src/agent/ 繚 �Ｗ����鞎颱���擗㗛�撠�椘���甈�
+      - generic [ref=e56]: ������
+      - generic [ref=e57]:
+        - generic [ref=e58]: 鞈�䲮 server ��
+        - generic [ref=e59]: src/server/ 繚 session 撣單𧋦watchdog��SSE 銝脫�
+      - generic [ref=e60]: ������
+      - generic [ref=e61]:
+        - generic [ref=e62]: facilitator
+        - generic [ref=e63]: �芣沲 x402-rs (Docker)撽㛖偷 + Fuji 銝羓�蝞�
+    - generic [ref=e64]:
+      - generic [ref=e65]: �箔�暻潮� Avalanche
+      - generic [ref=e66]:
+        - generic [ref=e67]: 甈∠�蝝𡁶Ⅱ摰𡁏�� �� 1s
+        - generic [ref=e68]: Snowman �梯�,�單��芰��券�銝𠰴虾銵�
+      - generic [ref=e69]:
+        - generic [ref=e70]: gas �条�
+        - generic [ref=e71]: 憭𡁏活鋆𨀣狡銝滩◤�讠�鞎餃���
+      - generic [ref=e72]:
+        - generic [ref=e73]: EVM �詨捆
+        - generic [ref=e74]: EIP-712 / ERC-20 撌亙���凒�交窒��
+      - generic [ref=e75]:
+        - generic [ref=e76]: L1 �游�
+        - generic [ref=e77]: �亙��臭�撱箏�撅祇�,�讠�鞎餉䌊閮�
+    - generic [ref=e78]:
+      - generic [ref=e79]:
+        - generic [ref=e80]: 銝�甈� tick ����蹱�
+        - generic [ref=e81]:
+          - generic [ref=e82]:
+            - generic [ref=e83]: "1"
+            - generic [ref=e84]:
+              - code [ref=e85]: POST /tick
+              - text: 瘝鍦葆隞䀹狡 �� server �� HTTP 402 ����潸��嗆狡鞈�𤩎
+          - generic [ref=e86]:
+            - generic [ref=e87]: "2"
+            - generic [ref=e88]:
+              - text: agent 蝪賭�蝑� USDC 隞䀹狡,憛鮋��
+              - code [ref=e89]: X-PAYMENT
+              - text: header �漤��
+          - generic [ref=e90]:
+            - generic [ref=e91]: "3"
+            - generic [ref=e92]: facilitator 撽𡑒�蝪賜�,銝血銁 Fuji 銝�蝯鞟�
+          - generic [ref=e93]:
+            - generic [ref=e94]: "4"
+            - generic [ref=e95]:
+              - code [ref=e96]: onAfterSettle
+              - text: 撱箇� session,��
+              - code [ref=e97]: "{ sessionId, accepted }"
+          - generic [ref=e98]:
+            - generic [ref=e99]: "5"
+            - generic [ref=e100]:
+              - text: agent �刻府 sessionId ��
+              - code [ref=e101]: GET /stream
+              - text: ",token �见�瘚��"
+          - generic [ref=e102]:
+            - generic [ref=e103]: "6"
+            - generic [ref=e104]:
+              - text: 擗㗛�雿擧䲰��瑼餅��芸��漤���蝑� tick,��
+              - code [ref=e105]: paidUntil
+              - text: 敺�敺�辣
+          - generic [ref=e106]:
+            - generic [ref=e107]: ��
+            - generic [ref=e108]:
+              - text: �暹�����𤾸祝�� �� server ��
+              - code [ref=e109]: "event: cut"
+              - text: ",銝餃��𣈯����"
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - generic [ref=e112]: 銝匧�讠垢暺�,�芣�銝��𧢲𤣰鞎�
+          - table [ref=e113]:
+            - rowgroup [ref=e114]:
+              - row [ref=e115]:
+                - columnheader "蝡舫�" [ref=e116]
+                - columnheader "x402" [ref=e117]
+                - columnheader "�瑁痊" [ref=e118]
+            - rowgroup [ref=e119]:
+              - row [ref=e120]:
+                - cell "POST /tick" [ref=e121]
+                - cell "�嗉祥" [ref=e122]
+                - cell "隞䀝�蝑� �� 撱箇��硋辣�� session" [ref=e124]
+              - row [ref=e125]:
+                - cell "GET /stream" [ref=e126]
+                - cell "�滩祥" [ref=e127]
+                - cell "SSE,session 瘣餉�撠勗� token" [ref=e129]
+              - row [ref=e130]:
+                - cell "GET /health" [ref=e131]
+                - cell "�滩祥" [ref=e132]
+                - cell "�笔�瑼Ｘ䰻�� demo �單𧋦" [ref=e134]
+        - paragraph [ref=e136]:
+          - strong [ref=e137]:
+            - code [ref=e138]: /stream
+            - text: �滩祥銝齿��鞉�瘣�:session �芣�隞㗛��Ｘ�摮睃銁��
+          - text: �躰� x402 middleware �坔銁摰�予����瑞� per-request 雿滨蔭,SSE ���摰��銝滨１隞䀹狡�讛摩��
+        - paragraph [ref=e139]:
+          - strong [ref=e140]: "�箔�暻潸��琿���:"
+          - text: �交��� tick �賣糓�函� request,�峕𪃾瘚��滢��擧糓 agent �芸楛 break 餈游�, server 敺鮋��啣偏瘝坿�雿蹂遙雿閙��䜘��𩑈���銝� agent ���������唾�,蝺𡁜㭱鋡怠�鈭���
+  - generic [ref=e38]:
+    - tablist "�訫蔣��" [ref=e39]:
+      - tab "01 摰帋�" [ref=e40] [cursor=pointer]
+      - tab "02 �毺�" [active] [ref=e41] [cursor=pointer]
+      - tab "03 ��彍" [ref=e42] [cursor=pointer]
+    - generic [ref=e43]:
+      - generic [ref=e44]: �� �� ���
+      - button "銝𠹺���" [ref=e45] [cursor=pointer]: ��
+      - button "銝衤���" [ref=e46] [cursor=pointer]: ��
