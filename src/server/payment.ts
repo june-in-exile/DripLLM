@@ -4,32 +4,6 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { FUJI_USDC } from "../shared/usdc.js";
 import type { AppConfig } from "../config.js";
 
-/**
- * API client 的 402 body。v2 middleware 把 requirements 放進 PAYMENT-REQUIRED header,
- * body 預設是空物件 —— 此回呼把價格與資產一併放進 body,讓 agent 不解析 header
- * 也能看到報價(verified in @x402/core dist: createHTTPResponse)。
- */
-function unpaidBody(config: AppConfig) {
-  return {
-    contentType: "application/json",
-    body: {
-      x402Version: 2,
-      error: "Payment required",
-      accepts: [
-        {
-          scheme: "exact",
-          network: FUJI_USDC.network,
-          asset: FUJI_USDC.address,
-          amount: config.pricePerTickAtomic.toString(),
-          payTo: config.payToAddress,
-          maxTimeoutSeconds: 300,
-          extra: { name: FUJI_USDC.name, version: FUJI_USDC.version },
-        },
-      ],
-    },
-  };
-}
-
 export function createPaymentMiddleware(
   config: AppConfig,
   onAfterSettle: (ctx: never) => Promise<void>,
@@ -56,7 +30,6 @@ export function createPaymentMiddleware(
         },
         description: "DripLLM 串流時間",
         mimeType: "application/json",
-        unpaidResponseBody: () => unpaidBody(config),
       },
     },
     resourceServer,

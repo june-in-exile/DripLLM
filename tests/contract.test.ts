@@ -77,9 +77,15 @@ describe("POST /tick —— 付款閘門", () => {
   it("未帶 X-PAYMENT 時回 402 並附上價格與資產", async () => {
     const res = await request(app).post("/tick").set("X-Drip-Session", "s1");
     expect(res.status).toBe(402);
-    const body = JSON.stringify(res.body);
-    expect(body).toContain("eip155:43113");
-    expect(body).toContain("0x5425890298aed601595a70AB815c96711a31Bc65");
+    // v2.25.0 標準 wire format:付款要求放 PAYMENT-REQUIRED header(base64url JSON),
+    // API client 的 body 預設為空物件(官方 client 讀 header,不讀 body)。
+    expect(res.body).toEqual({});
+    const encoded = res.headers["payment-required"];
+    if (typeof encoded !== "string") throw new Error("402 缺少 PAYMENT-REQUIRED header");
+    const required = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+    const text = JSON.stringify(required);
+    expect(text).toContain("eip155:43113");
+    expect(text).toContain("0x5425890298aed601595a70AB815c96711a31Bc65");
   });
 });
 
