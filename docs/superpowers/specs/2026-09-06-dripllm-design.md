@@ -553,8 +553,34 @@ supertest + **假 facilitator**(Express,`/verify`、`/settle`、`/supported` 直
 | 套件已發佈版本與 `main` branch 不一致 | `DEFAULT_ASSETS` / `DEFAULT_STABLECOINS` 的命名與內容在兩者間不同(§3.3) | 版本鎖 `2.25.0`;所有行為判斷以安裝的 dist 為準,不看 GitHub 原始碼 |
 | 第三方文件版本落後 | 多數 x402 教學仍為 v1 寫法 | 一律以 `coinbase/x402` repo 的 v2 範例與實際 dist 為準 |
 | facilitator gas 耗盡 | 自架需自行維護 AVAX 餘額 | 錯誤訊息明確指向此原因(見 §7) |
-| EIP-3009 路徑出狀況 | 主要 transfer method 依賴 Fuji USDC 的 `transferWithAuthorization` | **Fuji 上 Permit2 已部署(`0x0000…78BA3`,9152 bytes,已實測)**,`@x402/evm` 的 exact scheme 支援 `permit2` 作為備援 transfer method |
+| EIP-3009 路徑出狀況 | 主要 transfer method 依賴 Fuji USDC 的 `transferWithAuthorization` | permit2 為可用備援,但**有前置條件**,見 §9.1 |
 | hook 拋錯導致付款已結算但 session 未建立 | 見 §2.5 殘留風險 | PoC 接受;agent 重試一次後明確報錯 |
+
+### 9.1 permit2 備援的前置條件
+
+`@x402/evm` 的 exact scheme 有兩條 transfer method:`eip3009`(預設)與 `permit2`。本專案走 `eip3009`,但若該路徑出狀況,permit2 在 Fuji 上是可用的備援 —— **不過它不是改個設定就能切換**。
+
+已實測確認的部署狀況(Fuji,`eth_getCode`):
+
+| 合約 | 位址 | bytecode |
+| --- | --- | --- |
+| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | 9152 bytes |
+| x402ExactPermit2Proxy | `0x402085c248EeA27D92E8b30b2C58ed07f9E20001` | 2913 bytes |
+
+> proxy 位址在 `@x402/evm@2.25.0` 中是**單一字串常數** `x402ExactPermit2ProxyAddress`,而非 per-chain 對照表 —— 屬確定性部署,各鏈同址。
+
+**前置條件:付款者錢包必須先對該 token 做一次性的鏈上 `approve` 給 Permit2 合約**,之後才能以鏈下簽名授權個別轉帳。函式庫的 API 形狀直接說明了這一點:
+
+```ts
+// createPermit2ApprovalTx(tokenAddress) → { to, data },由呼叫端自行送出交易
+const tx = createPermit2ApprovalTx("0x...");
+await walletClient.sendTransaction({ to: tx.to, data: tx.data });
+```
+
+由此推出兩個影響:
+
+- **不影響 §2.5 的 settle 延遲分析。** 這筆 approve 是一次性的,不進每個 tick 的熱路徑。
+- **但 agent 錢包會需要 AVAX。** 走 `eip3009` 時 agent 完全不需要 AVAX(gas 是 facilitator 的事),這是 §7 目前沒有「agent AVAX 不足」那一列的原因。**一旦啟用 permit2 備援,該列就必須補上**,且 §1 的快速開始要多一個「agent 錢包領 AVAX」的步驟。
 
 ## 10. 驗收標準
 
