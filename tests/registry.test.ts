@@ -67,15 +67,30 @@ describe("tombstone", () => {
   it("markCut 會清掉已過期的舊 tombstone", () => {
     const reg = createRegistry();
     const ttl = 60000;
-    // 標記 s1 在時間 1000
-    reg.markCut("s1", 1000, ttl);
-    // 時間推進到 70000,此時 s1 已過期
-    // 標記 s2 在時間 70000,同時清理會掃掉 s1
-    reg.markCut("s2", 70000, ttl);
-    // 檢查 s1 是否仍被視為已剪除
-    // (它應該被清掉,所以返回 false)
-    expect(reg.isCut("s1", 70000, ttl)).toBe(false);
-    // 檢查 s2 在新時間內仍被視為已剪除
-    expect(reg.isCut("s2", 70001, ttl)).toBe(true);
+    // 標記 a 在時間 1000
+    reg.markCut("a", 1000, ttl);
+    // 標記 c 在時間 70000(此時 a 已過期:70000-1000=69000 > 60000)
+    // markCut 應在清理迴圈中掃掉 a
+    reg.markCut("c", 70000, ttl);
+    // 在有效期內檢查 a
+    // 若 a 已被掃掉     → isCut 不存在 → false
+    // 若 a 還存在(未清理) → 50000-1000=49000 不大於 60000 → true
+    // 這樣才能區分「有清理」和「沒清理」的結果
+    expect(reg.isCut("a", 50000, ttl)).toBe(false);
+
+    // 確認未過期項目不會被誤掃:
+    // 標記 b 在時間 30000
+    reg.markCut("b", 30000, ttl);
+    // 時間推進到 50000,標記 d
+    // b 還在有效期內(50000-30000=20000 不大於 60000)
+    reg.markCut("d", 50000, ttl);
+    // 檢查 b 仍在
+    expect(reg.isCut("b", 45000, ttl)).toBe(true);
+
+    // 確認正在寫入的項目不會被自己清理掃掉:
+    // 標記 x 在時間 100000,此時應沒有其他項目超期(假設此時只有 x 是新的)
+    reg.markCut("x", 100000, ttl);
+    // x 在有效期內
+    expect(reg.isCut("x", 100001, ttl)).toBe(true);
   });
 });
