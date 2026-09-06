@@ -32,13 +32,13 @@ describe("createRegistry —— 舊快照問題", () => {
 describe("tombstone", () => {
   it("標記後在 TTL 內為已剪除", () => {
     const reg = createRegistry();
-    reg.markCut("s1", 1000);
+    reg.markCut("s1", 1000, 60000);
     expect(reg.isCut("s1", 2000, 60000)).toBe(true);
   });
 
   it("超過 TTL 後不再視為已剪除", () => {
     const reg = createRegistry();
-    reg.markCut("s1", 1000);
+    reg.markCut("s1", 1000, 60000);
     expect(reg.isCut("s1", 61001, 60000)).toBe(false);
   });
 
@@ -49,7 +49,33 @@ describe("tombstone", () => {
 
   it("TTL 邊界:剛好等於 TTL 仍視為已剪除", () => {
     const reg = createRegistry();
-    reg.markCut("s1", 1000);
+    reg.markCut("s1", 1000, 60000);
     expect(reg.isCut("s1", 61000, 60000)).toBe(true);
+  });
+
+  it("isCut 無副作用:連續呼叫同一 id(第二次較小 nowMs)結果一致", () => {
+    const reg = createRegistry();
+    reg.markCut("s1", 1000, 60000);
+    // 先呼叫一次,用時間 61001(超過 TTL,時間差 60001 > 60000)
+    expect(reg.isCut("s1", 61001, 60000)).toBe(false);
+    // 再呼叫一次,用時間 50000(在 TTL 內,時間差 49000 < 60000)
+    // 如果 isCut 有副作用(刪除 tombstone),這會返回 false(因為 s1 被刪掉)
+    // 如果 isCut 無副作用(純讀),這會返回 true(因為 s1 仍在 cutAt 中)
+    expect(reg.isCut("s1", 50000, 60000)).toBe(true);
+  });
+
+  it("markCut 會清掉已過期的舊 tombstone", () => {
+    const reg = createRegistry();
+    const ttl = 60000;
+    // 標記 s1 在時間 1000
+    reg.markCut("s1", 1000, ttl);
+    // 時間推進到 70000,此時 s1 已過期
+    // 標記 s2 在時間 70000,同時清理會掃掉 s1
+    reg.markCut("s2", 70000, ttl);
+    // 檢查 s1 是否仍被視為已剪除
+    // (它應該被清掉,所以返回 false)
+    expect(reg.isCut("s1", 70000, ttl)).toBe(false);
+    // 檢查 s2 在新時間內仍被視為已剪除
+    expect(reg.isCut("s2", 70001, ttl)).toBe(true);
   });
 });
