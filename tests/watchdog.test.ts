@@ -14,7 +14,7 @@ function setup(nowMs = 1000, creditMs = 5000) {
   registry.setStore(r.store);
   const res = { write: vi.fn(), end: vi.fn() } as never;
   hub.attach("s1", res);
-  const watchdog = createWatchdog({ registry, hub, graceMs: 2000 });
+  const watchdog = createWatchdog({ registry, hub, graceMs: 2000, tombstoneTtlMs: 60000 });
   return { registry, hub, watchdog, res: res as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> } };
 }
 
@@ -71,6 +71,40 @@ describe("watchdog sweep —— 剪線副作用", () => {
     watchdog.sweep(9000);
     watchdog.sweep(9500);
     expect(res.end).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("watchdog sweep —— 剪線順序防線(觀察中間狀態)", () => {
+  it("cut frame 寫出時 session 已不在帳本(先移除、後送 cut)", () => {
+    const { registry, watchdog, res } = setup();
+    // res.write 在 hub.cut 內部同步觸發 —— 在此刻檢查帳本,能觀察「cut 當下」的中間狀態。
+    res.write.mockImplementation(() => {
+      expect(registry.getStore().has("s1")).toBe(false);
+    });
+    watchdog.sweep(9000);
+    expect(res.write).toHaveBeenCalled();
+  });
+
+  it("onCut 觸發時帳本已無此 session(先移除、後通知)", () => {
+    const registry = createRegistry();
+    const hub = createStreamHub();
+    const r = upsertSession(registry.getStore(), "s1", PAYER, 1000, 5000, 1000n, "0xtx");
+    if (!r.ok) throw new Error("seed failed");
+    registry.setStore(r.store);
+    const res = { write: vi.fn(), end: vi.fn() } as never;
+    hub.attach("s1", res);
+    let presentAtCut = true;
+    const watchdog = createWatchdog({
+      registry,
+      hub,
+      graceMs: 2000,
+      tombstoneTtlMs: 60000,
+      onCut: () => {
+        presentAtCut = registry.getStore().has("s1");
+      },
+    });
+    watchdog.sweep(9000);
+    expect(presentAtCut).toBe(false);
   });
 });
 
