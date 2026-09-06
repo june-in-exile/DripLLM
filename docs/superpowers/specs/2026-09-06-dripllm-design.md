@@ -553,6 +553,7 @@ supertest + **假 facilitator**(Express,`/verify`、`/settle`、`/supported` 直
 | 套件已發佈版本與 `main` branch 不一致 | `DEFAULT_ASSETS` / `DEFAULT_STABLECOINS` 的命名與內容在兩者間不同(§3.3) | 版本鎖 `2.25.0`;所有行為判斷以安裝的 dist 為準,不看 GitHub 原始碼 |
 | 第三方文件版本落後 | 多數 x402 教學仍為 v1 寫法 | 一律以 `coinbase/x402` repo 的 v2 範例與實際 dist 為準 |
 | facilitator gas 耗盡 | 自架需自行維護 AVAX 餘額 | 錯誤訊息明確指向此原因(見 §7) |
+| EIP-3009 路徑出狀況 | 主要 transfer method 依賴 Fuji USDC 的 `transferWithAuthorization` | **Fuji 上 Permit2 已部署(`0x0000…78BA3`,9152 bytes,已實測)**,`@x402/evm` 的 exact scheme 支援 `permit2` 作為備援 transfer method |
 | hook 拋錯導致付款已結算但 session 未建立 | 見 §2.5 殘留風險 | PoC 接受;agent 重試一次後明確報錯 |
 
 ## 10. 驗收標準
