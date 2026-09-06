@@ -1,0 +1,14 @@
+{
+  "port": 8080,
+  "host": "0.0.0.0",
+  "chains": {
+    "eip155:43113": {
+      "eip1559": true,
+      "signers": ["$FACILITATOR_PRIVATE_KEY"],
+      "rpc": [{ "http": "https://api.avax-test.network/ext/bc/C/rpc" }]
+    }
+  },
+  "schemes": [
+    { "scheme": "v2-eip155-exact", "chains": ["eip155:43113"] }
+  ]
+}

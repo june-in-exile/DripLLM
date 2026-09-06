@@ -1,0 +1,9 @@
+services:
+  facilitator:
+    image: ghcr.io/x402-rs/x402-facilitator
+    ports:
+      - "8080:8080"
+    environment:
+      FACILITATOR_PRIVATE_KEY: ${FACILITATOR_PRIVATE_KEY}
+    volumes:
+      - ./facilitator/config.json:/app/config.json:ro
