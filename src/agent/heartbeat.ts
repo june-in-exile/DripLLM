@@ -25,7 +25,8 @@ export async function payTick(
   if (res.status === 409) throw new SessionCutError();
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    if (/insufficient|balance|funds/i.test(detail)) {
+    // 只有 402(付款遭拒)才可能是餘額不足;其他狀態碼一律走通用訊息。
+    if (res.status === 402 && /insufficient|balance|funds/i.test(detail)) {
       throw new Error("USDC 餘額不足 —— 前往 Circle faucet 領取");
     }
     throw new Error(`付款失敗:HTTP ${res.status} ${detail}`);
