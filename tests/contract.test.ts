@@ -26,7 +26,7 @@ beforeAll(async () => {
   const config = loadConfig({
     ...FAST,
     FACILITATOR_URL: fake.url,
-    PAY_TO_ADDRESS: "0x1234567890123456789012345678901234567890",
+    LLM_PROVIDER_ADDRESS: "0x1234567890123456789012345678901234567890",
     AGENT_PRIVATE_KEY: "0x" + "a".repeat(64),
   });
   app = await buildApp(config);

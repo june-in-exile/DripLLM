@@ -11,7 +11,7 @@ const schema = z
     SERVER_PORT: z.coerce.number().int().positive().default(4021),
     SERVER_BASE_URL: z.string().url().default("http://localhost:4021"),
     FACILITATOR_URL: z.string().url(),
-    PAY_TO_ADDRESS: z.string().regex(ADDRESS, "須為 0x 開頭的 40 位十六進位地址"),
+    LLM_PROVIDER_ADDRESS: z.string().regex(ADDRESS, "須為 0x 開頭的 40 位十六進位地址"),
     AGENT_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, "須為 0x 開頭的 64 位十六進位私鑰"),
     CREDIT_PER_TICK_MS: z.coerce.number().int().positive().default(5000),
     TOPUP_THRESHOLD_MS: z.coerce.number().int().positive().default(2000),
@@ -32,7 +32,7 @@ export type AppConfig = Readonly<{
   serverPort: number;
   serverBaseUrl: string;
   facilitatorUrl: string;
-  payToAddress: string;
+  llmProviderAddress: string;
   agentPrivateKey: string;
   creditPerTickMs: number;
   topupThresholdMs: number;
@@ -56,7 +56,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     serverPort: v.SERVER_PORT,
     serverBaseUrl: v.SERVER_BASE_URL,
     facilitatorUrl: v.FACILITATOR_URL,
-    payToAddress: v.PAY_TO_ADDRESS,
+    llmProviderAddress: v.LLM_PROVIDER_ADDRESS,
     agentPrivateKey: v.AGENT_PRIVATE_KEY,
     creditPerTickMs: v.CREDIT_PER_TICK_MS,
     topupThresholdMs: v.TOPUP_THRESHOLD_MS,

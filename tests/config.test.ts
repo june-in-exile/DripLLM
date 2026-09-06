@@ -3,7 +3,7 @@ import { loadConfig, ConfigError } from "../src/config.js";
 
 const valid = {
   FACILITATOR_URL: "http://localhost:8080",
-  PAY_TO_ADDRESS: "0x1234567890123456789012345678901234567890",
+  LLM_PROVIDER_ADDRESS: "0x1234567890123456789012345678901234567890",
   AGENT_PRIVATE_KEY: "0x" + "a".repeat(64),
 };
 
@@ -22,13 +22,13 @@ describe("loadConfig", () => {
       expect(e).toBeInstanceOf(ConfigError);
       const msg = (e as ConfigError).message;
       expect(msg).toContain("FACILITATOR_URL");
-      expect(msg).toContain("PAY_TO_ADDRESS");
+      expect(msg).toContain("LLM_PROVIDER_ADDRESS");
       expect(msg).toContain("AGENT_PRIVATE_KEY");
     }
   });
 
   it("拒絕格式錯誤的地址", () => {
-    expect(() => loadConfig({ ...valid, PAY_TO_ADDRESS: "not-an-address" }))
+    expect(() => loadConfig({ ...valid, LLM_PROVIDER_ADDRESS: "not-an-address" }))
       .toThrow(ConfigError);
   });
 

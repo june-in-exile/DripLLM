@@ -26,7 +26,7 @@ export function createPaymentMiddleware(
             extra: { name: FUJI_USDC.name, version: FUJI_USDC.version },
           },
           network: FUJI_USDC.network,
-          payTo: config.payToAddress,
+          payTo: config.llmProviderAddress, // 協定欄位名仍為 payTo
         },
         description: "DripLLM 串流時間",
         mimeType: "application/json",
