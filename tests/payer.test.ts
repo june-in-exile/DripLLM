@@ -38,4 +38,10 @@ describe("extractPayer", () => {
   it("地址一律正規化為小寫,避免大小寫造成誤判不符", () => {
     expect(extractPayer(payload(FROM.toUpperCase()), undefined)).toBe(FROM.toLowerCase());
   });
+
+  it("batch-settlement 從 channelConfig.payer 取得付款者", () => {
+    expect(
+      extractPayer({ type: "voucher", channelConfig: { payer: FROM.toUpperCase() } }),
+    ).toBe(FROM.toLowerCase());
+  });
 });

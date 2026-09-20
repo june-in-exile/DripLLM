@@ -7,6 +7,7 @@ export class PayerUnknownError extends Error {
 
 type MaybeExactPayload = {
   authorization?: { from?: unknown };
+  channelConfig?: { payer?: unknown };
 };
 
 function asAddress(v: unknown): string | null {
@@ -21,7 +22,8 @@ function asAddress(v: unknown): string | null {
 export function extractPayer(payload: unknown, settlePayer?: string): string {
   const from =
     typeof payload === "object" && payload !== null
-      ? asAddress((payload as MaybeExactPayload).authorization?.from)
+      ? asAddress((payload as MaybeExactPayload).authorization?.from) ??
+        asAddress((payload as MaybeExactPayload).channelConfig?.payer)
       : null;
 
   const fallback = asAddress(settlePayer);

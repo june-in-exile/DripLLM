@@ -64,7 +64,11 @@ async function topUp(
   try {
     const r = await payTick(wallet, config, state.sessionId);
     state.ledger = recordTick(state.ledger);
-    renderTick(state.ledger.tickCount, r.txHash, state.ledger.spentAtomic);
+    renderTick(state.ledger.tickCount, r.txHash, state.ledger.spentAtomic, {
+      balance: r.channelBalance,
+      ceiling: r.signedCeiling,
+      cumulative: r.chargedCumulative,
+    });
   } catch (e) {
     if (e instanceof SessionCutError) {
       state.paying = false;
@@ -76,6 +80,15 @@ async function topUp(
     }
   } finally {
     state.inFlight = false;
+  }
+}
+
+/** 退款失敗不該無聲 —— 押金留在合約裡,使用者必須知道要手動取回(spec §10.7)。 */
+async function refundQuietly(wallet: ReturnType<typeof createWallet>): Promise<void> {
+  try {
+    await wallet.refund();
+  } catch (e) {
+    logger.error("agent", `退還押金失敗,押金仍鎖在 channel 中:${String(e)}`);
   }
 }
 
@@ -120,6 +133,7 @@ async function runStreamLoop(
       } else if (frame.event === "cut") {
         const c = JSON.parse(frame.data) as { tickCount: number; spentAtomic: string };
         renderCut(c.tickCount, BigInt(c.spentAtomic));
+        await refundQuietly(wallet);
         process.exit(0);
       }
     }
@@ -131,20 +145,26 @@ async function runAgent(config: AppConfig): Promise<void> {
   const state = createAgentState(config);
 
   // 第一次 Ctrl-C 只停付款,連線保持 —— 這是整個 demo 成立的關鍵。
+  let interruptCount = 0;
   process.on("SIGINT", () => {
-    if (state.paying) {
+    interruptCount++;
+    if (state.paying && interruptCount === 1) {
       state.paying = false;
       renderStopPaying("manual", state.ledger.spentAtomic);
       return;
     }
-    process.exit(0);
+    void refundQuietly(wallet).finally(() => process.exit(0));
   });
 
   // tick #1 不由 event: credit 驅動 —— 此刻 session 尚不存在(spec §2.2.1)
   const first = await payWithRetry(wallet, config, state);
   state.sessionId = first.sessionId;
   state.ledger = recordTick(state.ledger);
-  renderTick(state.ledger.tickCount, first.txHash, state.ledger.spentAtomic);
+  renderTick(state.ledger.tickCount, first.txHash, state.ledger.spentAtomic, {
+    balance: first.channelBalance,
+    ceiling: first.signedCeiling,
+    cumulative: first.chargedCumulative,
+  });
 
   await runStreamLoop(wallet, config, state);
 }

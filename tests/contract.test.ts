@@ -18,6 +18,7 @@ const OTHER_AGENT = "0x" + "c".repeat(40);
 
 let fake: Awaited<ReturnType<typeof startFakeFacilitator>>;
 let app: Express;
+let shutdown: () => Promise<void>;
 
 beforeAll(async () => {
   fake = await startFakeFacilitator();
@@ -26,13 +27,18 @@ beforeAll(async () => {
   const config = loadConfig({
     ...FAST,
     FACILITATOR_URL: fake.url,
+    FACILITATOR_PRIVATE_KEY: "0x" + "f".repeat(64),
+    CHANNEL_STORAGE_DIR: `/tmp/dripllm-contract-${crypto.randomUUID()}`,
     LLM_PROVIDER_ADDRESS: "0x1234567890123456789012345678901234567890",
     AGENT_PRIVATE_KEY: "0x" + "a".repeat(64),
   });
-  app = await buildApp(config);
+  const built = await buildApp(config);
+  app = built.app;
+  shutdown = built.shutdown;
 });
 
 afterAll(async () => {
+  await shutdown();
   await fake.close();
 });
 
@@ -84,6 +90,8 @@ describe("POST /tick —— 付款閘門", () => {
     if (typeof encoded !== "string") throw new Error("402 缺少 PAYMENT-REQUIRED header");
     const required = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
     const text = JSON.stringify(required);
+    expect(text).toContain("batch-settlement");
+    expect(text).not.toContain('"scheme":"exact"');
     expect(text).toContain("eip155:43113");
     expect(text).toContain("0x5425890298aed601595a70AB815c96711a31Bc65");
   });
@@ -174,7 +182,7 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
       sessionId: "paid-cut",
       reason: "payment_lapsed",
       tickCount: 1,
-      spentAtomic: "1000",
+      spentAtomic: "40",
     });
   });
 
@@ -261,12 +269,12 @@ describe("付款 → session → SSE → 剪線(真實 middleware + 假 facilita
     expect(hijack.status).toBe(200);
     expect(fake.settleCount()).toBe(8);
 
-    // hook 拒絕延長:tickCount 仍是 1,spentAtomic 仍是第一次的 1000
+    // hook 拒絕延長:tickCount 仍是 1,spentAtomic 仍是第一格的 40
     const res = await request(app).get("/stream").set("X-Drip-Session", "paid-mismatch");
     expect(res.status).toBe(200);
     const frames = parseSse(res.text);
     const cut = frames.filter((f) => f.event === "cut");
     expect(cut).toHaveLength(1);
-    expect(JSON.parse(cut[0]!.data)).toMatchObject({ tickCount: 1, spentAtomic: "1000" });
+    expect(JSON.parse(cut[0]!.data)).toMatchObject({ tickCount: 1, spentAtomic: "40" });
   });
 });

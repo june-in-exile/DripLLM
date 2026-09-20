@@ -5,6 +5,8 @@ export const FUJI_USDC = Object.freeze({
   name: "USD Coin" as const,
   version: "2" as const,
   decimals: 6 as const,
+  batchSettlementAddress: "0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003" as const,
+  erc3009DepositCollectorAddress: "0x4020806089470a89826cB9fB1f4059150b550004" as const,
 });
 
 export function atomicToUsd(atomic: bigint): string {

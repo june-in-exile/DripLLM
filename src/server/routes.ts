@@ -4,12 +4,23 @@ import { createRegistry } from "./registry.js";
 import { createStreamHub } from "./stream.js";
 import { createWatchdog } from "./watchdog.js";
 import { createSettleHook } from "./settleHook.js";
-import { createPaymentMiddleware } from "./payment.js";
+import { createPaymentStack } from "./payment.js";
+import { createServerChannelStorage } from "./channelStorage.js";
+import { startClaimJob } from "./claimJob.js";
+import type { BatchSettlementChannelManager } from "@x402/evm/batch-settlement/server";
 import { cannedTokenSource } from "./tokenSource.js";
 import { remainingMs, inGrace } from "./sessions.js";
 import { logger } from "../shared/logger.js";
 
-export async function buildApp(config: AppConfig): Promise<Express> {
+export type BuiltApp = Readonly<{
+  app: Express;
+  /** 賣方請款排程器。常態由 startClaimJob 驅動,手動冒煙測試需要即時觸發一次。 */
+  manager: BatchSettlementChannelManager;
+  /** 收工時把尚未 claim 的 voucher 沖出去,避免那段收入卡在 storage 裡(spec §9)。 */
+  shutdown(): Promise<void>;
+}>;
+
+export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   const registry = createRegistry();
   const hub = createStreamHub();
   const watchdog = createWatchdog({
@@ -24,11 +35,15 @@ export async function buildApp(config: AppConfig): Promise<Express> {
     registry,
     creditMs: config.creditPerTickMs,
     priceAtomic: config.pricePerTickAtomic,
+    depositTopupAtomic: config.depositTopupAtomic,
   });
+  const storage = createServerChannelStorage(config.channelStorageDir);
+  const payment = createPaymentStack(config, storage, hook as never);
+  const claimJob = startClaimJob(payment.manager, config);
 
   const app = express();
   app.use(express.json());
-  app.use(createPaymentMiddleware(config, hook as never));
+  app.use(payment.middleware);
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, sessions: registry.getStore().size });
@@ -110,5 +125,13 @@ export async function buildApp(config: AppConfig): Promise<Express> {
   });
 
   watchdog.start(config.watchdogSweepMs);
-  return app;
+
+  return {
+    app,
+    manager: payment.manager,
+    async shutdown() {
+      watchdog.stop();
+      await claimJob.stop({ flush: true });
+    },
+  };
 }

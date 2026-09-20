@@ -1,9 +1,20 @@
 services:
   facilitator:
-    image: ghcr.io/x402-rs/x402-facilitator
+    image: node:22-alpine
+    working_dir: /app
+    # 容器內自己裝相依套件:host 的 node_modules(macOS)含 native binding 時
+    # 直接掛進 alpine 會壞,所以用匿名 volume 把它蓋掉。
+    command: sh -c "npm ci && npm run facilitator"
     ports:
       - "8080:8080"
     environment:
+      FACILITATOR_URL: http://facilitator:8080
+      FACILITATOR_PORT: 8080
       FACILITATOR_PRIVATE_KEY: ${FACILITATOR_PRIVATE_KEY}
+      AGENT_PRIVATE_KEY: ${AGENT_PRIVATE_KEY}
+      LLM_PROVIDER_ADDRESS: ${LLM_PROVIDER_ADDRESS}
+      FUJI_RPC_URL: ${FUJI_RPC_URL:-https://api.avax-test.network/ext/bc/C/rpc}
+      FACILITATOR_POLLING_MS: ${FACILITATOR_POLLING_MS:-250}
     volumes:
-      - ./facilitator/config.json:/app/config.json:ro
+      - .:/app
+      - /app/node_modules

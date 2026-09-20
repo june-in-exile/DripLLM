@@ -13,6 +13,15 @@ describe("FUJI_USDC", () => {
   it("decimals 為 6", () => {
     expect(FUJI_USDC.decimals).toBe(6);
   });
+
+  it("使用 x402 v2.25 的確定性 batch-settlement 合約位址", () => {
+    expect(FUJI_USDC.batchSettlementAddress).toBe(
+      "0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003",
+    );
+    expect(FUJI_USDC.erc3009DepositCollectorAddress).toBe(
+      "0x4020806089470a89826cB9fB1f4059150b550004",
+    );
+  });
 });
 
 describe("atomicToUsd", () => {

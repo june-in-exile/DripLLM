@@ -1,7 +1,14 @@
 node_modules/
+# .env 的任何副本都含私鑰 —— .env.bak / .env.local 之類一律擋掉
 .env
+.env.*
+!.env.example
 coverage/
 .superpowers/
+
+# channel 儲存:內含最新 voucher 的簽章,等同未請款的收據,絕不進版控
+.dripllm/
+.channels/
 
 .DS_Store
 .vercel

@@ -8,10 +8,12 @@
   },
   "type": "module",
   "scripts": {
+    "facilitator": "tsx src/facilitator/main.ts",
     "server": "tsx src/server/main.ts",
     "agent": "tsx src/agent/main.ts",
     "test": "vitest run --coverage",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "smoke:channel": "tsx scripts/smoke-channel.ts"
   },
   "keywords": [],
   "author": "",

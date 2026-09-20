@@ -1,8 +1,18 @@
 import { formatUsd } from "../shared/usdc.js";
 import { logger } from "../shared/logger.js";
 
-export function renderTick(tickCount: number, txHash: string, spentAtomic: bigint): void {
-  logger.info("agent", `tick #${tickCount} · ${formatUsd(spentAtomic)} 累計 · tx ${txHash.slice(0, 12)}…`);
+export function renderTick(
+  tickCount: number,
+  txHash: string | undefined,
+  spentAtomic: bigint,
+  extra?: { balance?: string; ceiling?: string; cumulative?: string }
+): void {
+  const txPart = txHash ? `tx ${txHash.slice(0, 12)}…` : "voucher";
+  let extraPart = "";
+  if (extra?.balance != null) {
+    extraPart = ` · bal ${formatUsd(BigInt(extra.balance))} / cap ${formatUsd(BigInt(extra.ceiling || "0"))} / sum ${formatUsd(BigInt(extra.cumulative || "0"))}`;
+  }
+  logger.info("agent", `tick #${tickCount} · ${formatUsd(spentAtomic)} 累計 · ${txPart}${extraPart}`);
 }
 
 export function renderToken(token: string): void {

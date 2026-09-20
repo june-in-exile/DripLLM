@@ -9,6 +9,7 @@ import { createSseParser } from "../src/agent/sse.js";
 
 let fake: Awaited<ReturnType<typeof startFakeFacilitator>>;
 let server: Server;
+let shutdown: () => Promise<void>;
 let baseUrl: string;
 let config: ReturnType<typeof loadConfig>;
 
@@ -25,18 +26,22 @@ beforeAll(async () => {
     SERVER_PORT: String(port),
     SERVER_BASE_URL: `http://localhost:${port}`,
     FACILITATOR_URL: fake.url,
+    FACILITATOR_PRIVATE_KEY: "0x" + "f".repeat(64),
+    CHANNEL_STORAGE_DIR: `/tmp/dripllm-e2e-${crypto.randomUUID()}`,
     LLM_PROVIDER_ADDRESS: "0x1234567890123456789012345678901234567890",
     AGENT_PRIVATE_KEY: "0x" + "a".repeat(64),
   });
   baseUrl = config.serverBaseUrl;
-  const app = await buildApp(config);
+  const built = await buildApp(config);
+  shutdown = built.shutdown;
   server = await new Promise((r) => {
-    const s = app.listen(port, () => r(s));
+    const s = built.app.listen(port, () => r(s));
   });
 });
 
 afterAll(async () => {
   await new Promise((r) => server.close(() => r(null)));
+  await shutdown();
   await fake.close();
 });
 
