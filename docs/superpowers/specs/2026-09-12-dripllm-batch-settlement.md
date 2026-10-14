@@ -209,7 +209,7 @@ agent                         server                     facilitator            
 
 **停付到剪線 = 停付當下的剩餘餘額 + `GRACE_MS` + 最多一個 sweep 週期。** 以 §5 的建議值推算:剩餘餘額 0～1 秒、`GRACE_MS` 250ms、sweep 100ms,**上限約 1.35 秒**(現況為 2～27 秒)。
 
-**首個 token 的延遲不會歸零。** 第一格必須等 deposit 上鏈,估計 1～2 秒(出塊約 1 秒 + 輪詢 250ms + RTT),由 §8 spike 定案。現況為 7～14 秒。
+**首個 token 的延遲不會歸零。** 第一格必須等 deposit 上鏈,原估 1～2 秒(出塊約 1 秒 + 輪詢 250ms + RTT);§8 spike 實測為 **5.6～6.9 秒**(ERC-3009 deposit 的 gas 與步驟都比單純轉帳多,見 §12.4)。現況為 7～14 秒。
 
 ---
 
@@ -262,7 +262,7 @@ WITHDRAW_DELAY_SECS  > CLAIM_INTERVAL_SECS + 上鏈延遲 + 餘裕
 | 賣方即時曝險 | 寬限 2 秒 | 一格 + sweep ≈ 1.1 秒 |
 | 賣方新增責任 | 無 | 押金守門、claim 時效、voucher 持久化 |
 | 停付到剪線 | 2～27 秒 | ≈1.35 秒 |
-| 首個 token 延遲 | 7～14 秒 | 1～2 秒(待量測) |
+| 首個 token 延遲 | 7～14 秒 | 約 6～7 秒(實測,§12.4;原估 1～2 秒) |
 | 上鏈次數 | 每 25 秒一筆 | 開場 1 筆 + 每 60 秒一筆 + 收工 refund |
 
 ---
@@ -432,7 +432,7 @@ manager.start({
 
 1. `npm run facilitator` 起得了自架 facilitator,`/health` 與 `/supported` 回應正常
 2. `npm run server` 在 facilitator 未啟動時拒絕啟動並給出明確訊息(沿用原行為)
-3. `npm run agent` 後:第一格完成 deposit 並在 **2 秒內**開始串流(spike 定案後填入實測值)
+3. `npm run agent` 後:第一格完成 deposit 並在 **8 秒內**開始串流(原訂 2 秒,依 §12.4 的 deposit 實測 5.6～6.9 秒改寫)
 4. 穩定串流時,每秒一格,終端可見已簽上限、押金餘額、累計消耗
 5. 第一次 Ctrl-C 後停止簽 voucher 但保持連線,**1.5 秒內**收到 `event: cut` 並由 server 關閉連線
 6. 把 `DEPOSIT_ATOMIC` 調低,押金耗盡後產生相同的斷流結果
@@ -554,3 +554,40 @@ server 的 channel 紀錄被刪除,但買方本地仍存著「餘額還有 50000
 
 > 順帶修掉一個會誤導人的啟發式:原本的 `/insufficient|balance|funds/i` 會把 channel 的
 > `cumulative_exceeds_balance` 判成「USDC 餘額不足,請去 faucet 領錢」,而錢包其實有 19.97 USDC。
+
+### 12.7 `shouldSettle` 沒有金額門檻
+
+§6.3 的 `shouldSettle` 寫的是「未請款金額超過門檻才轉出,省 gas」。實作是
+`({ pendingSettle }) => pendingSettle`(`src/server/claimJob.ts`):只要有已 claim、尚未轉出的餘額,
+每個 `SETTLE_INTERVAL_SECS` 就 settle 一次,沒有金額門檻。
+
+保留的原因:Fuji 的 gas 近乎為零,而 PoC 一場串流的應收金額很小(0.05 USDC 押金上限),
+加門檻只會讓 demo 結束時看不到 settle 交易。這與 §11「claim 是否改為金額門檻」是同一個待定問題,
+**主網化時兩者應一起改成以金額為主**。
+
+### 12.8 channel storage 只實作 file 版
+
+§2.5.3 與 §6 寫「file 或 redis storage」。實作只有 file:`src/server/channelStorage.ts` 直接回傳套件的
+`FileChannelStorage`,沒有 Redis 選項。
+
+這沒有違反 §2.5.3 的要求(一律使用可持久化的 storage,不用 `InMemoryChannelStorage`),
+PoC 也只跑單實例(§6.1)。改成多實例部署時,必須換成有後端層級原子條件更新的 storage
+(Redis Lua 或 SQL transaction),不能只是把檔案目錄改成共用磁碟。
+
+---
+
+## 13. 驗收狀態(2026-10-14)
+
+| §10 | 項目 | 狀態 | 依據 |
+| --- | --- | --- | --- |
+| 1 | facilitator `/health`、`/supported` | ✅ | `tests/facilitator.test.ts` 對真正組起來的 `x402Facilitator` 斷言;Fuji 實跑使用過 |
+| 2 | facilitator 未啟動時 server 拒絕啟動 | ✅ | `src/server/main.ts` 的 `assertFacilitatorUp()`,沿用原行為 |
+| 3 | 8 秒內開始串流 | ⚠️ 部分 | `smoke:channel` 量到 deposit 5.6～6.9 秒;尚未以 `npm run agent` 端到端量首個 token |
+| 4 | 終端顯示已簽上限、押金餘額、累計消耗 | ✅ | `src/agent/render.ts`(bal / cap / sum),`tests/render.test.ts` |
+| 5 | Ctrl-C 後 1.5 秒內 `event: cut` | ⚠️ 部分 | `tests/batchSettlement.test.ts` 以假 facilitator 驗證上界;**尚未在 Fuji 實測** |
+| 6 | 押金耗盡產生相同斷流 | ✅ | `tests/batchSettlement.test.ts`「押金耗盡…回 402 且不建立 session」 |
+| 7 | 收工 refund,押金回到買方 | ✅ | §12.4 兩輪實測(賣方端 5.1 秒、買方端 4.5 秒) |
+| 8 | 上鏈次數與格數脫鉤 | ❌ 未驗 | 單元測試確認只有第一格上鏈;**尚未做「`CREDIT_PER_TICK_MS` 減半後重跑、比對鏈上交易數」的實測** |
+| 9 | 測試通過、涵蓋率 ≥ 80% | ✅ | 21 個檔、167 個測試通過;line coverage 96.82% |
+
+剩下的 3、5、8 都需要在 Fuji 上手動跑 `npm run agent`(會花測試網 USDC 與 facilitator 的 AVAX),不進 CI。

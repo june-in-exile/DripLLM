@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-12-dripllm-batch-settlement.md`
 
+**Status (2026-10-14):** All tasks implemented in commit `a55e459`; `npm test` passes (21 files, 167 tests, 96.82% line coverage) and `npx tsc --noEmit` is clean. Acceptance items §10.3, §10.5 and §10.8 still need a manual Fuji run — see spec §13.
+
 ## Global Constraints
 
 - Preserve `POST /tick`, `GET /stream`, `GET /health`, `X-Drip-Session`, and the token/credit/cut SSE events.
@@ -35,11 +37,11 @@
 - Produces: `canServe`, `remainingTicks`, `needsDepositTopUp`, and `withdrawDeadlineMs` pure functions.
 - Produces: batch timing, deposit, claim, settle, refund, storage, RPC, and facilitator configuration in `AppConfig`.
 
-- [ ] Add failing boundary tests for top-up detection and withdrawal deadlines, then run `npx vitest run tests/channels.test.ts` and confirm the missing exports fail.
-- [ ] Implement the two pure functions with bigint-safe arithmetic and explicit `nowMs` input where time is involved.
-- [ ] Add failing config/default/constraint tests and batch contract-address tests.
-- [ ] Change defaults to 1-second ticks, 40 atomic per tick, 250ms grace, 100ms sweep, and add the §5.2 channel settings.
-- [ ] Run `npx vitest run tests/channels.test.ts tests/config.test.ts tests/usdc.test.ts`.
+- [x] Add failing boundary tests for top-up detection and withdrawal deadlines, then run `npx vitest run tests/channels.test.ts` and confirm the missing exports fail.
+- [x] Implement the two pure functions with bigint-safe arithmetic and explicit `nowMs` input where time is involved.
+- [x] Add failing config/default/constraint tests and batch contract-address tests.
+- [x] Change defaults to 1-second ticks, 40 atomic per tick, 250ms grace, 100ms sweep, and add the §5.2 channel settings.
+- [x] Run `npx vitest run tests/channels.test.ts tests/config.test.ts tests/usdc.test.ts`.
 
 ### Task 2: Persistent channel storage and claim policy
 
@@ -53,10 +55,10 @@
 - Produces: `createServerChannelStorage(rootDir): ChannelStorage`.
 - Produces: `prioritizeWithdrawalPending(channels)` and `startClaimJob(...)`.
 
-- [ ] Write failing tests proving records survive a new file-storage instance and withdrawal-pending channels sort first.
-- [ ] Wrap `FileChannelStorage` and implement pure claim selection.
-- [ ] Start `BatchSettlementChannelManager` with configured claim/settle/refund intervals, batch size, logging, and withdrawal priority.
-- [ ] Run `npx vitest run tests/channelStorage.test.ts tests/claimJob.test.ts`.
+- [x] Write failing tests proving records survive a new file-storage instance and withdrawal-pending channels sort first.
+- [x] Wrap `FileChannelStorage` and implement pure claim selection.
+- [x] Start `BatchSettlementChannelManager` with configured claim/settle/refund intervals, batch size, logging, and withdrawal priority.
+- [x] Run `npx vitest run tests/channelStorage.test.ts tests/claimJob.test.ts`.
 
 ### Task 3: Self-hosted TypeScript facilitator
 
@@ -71,10 +73,10 @@
 - Produces: `createFacilitatorApp(facilitator)` with `/health`, `/supported`, `/verify`, and `/settle`.
 - Produces: `npm run facilitator` backed by a viem Fuji signer with a 250ms polling interval.
 
-- [ ] Write failing HTTP tests against a deterministic facilitator double.
-- [ ] Implement the HTTP adapter and preserve x402 response shapes and error status handling.
-- [ ] Compose `x402Facilitator` with the batch-settlement facilitator scheme and replace the x402-rs compose service.
-- [ ] Run `npx vitest run tests/facilitator.test.ts` and `npx tsc --noEmit`.
+- [x] Write failing HTTP tests against a deterministic facilitator double.
+- [x] Implement the HTTP adapter and preserve x402 response shapes and error status handling.
+- [x] Compose `x402Facilitator` with the batch-settlement facilitator scheme and replace the x402-rs compose service.
+- [x] Run `npx vitest run tests/facilitator.test.ts` and `npx tsc --noEmit`.
 
 ### Task 4: Server payment scheme and background settlement
 
@@ -89,10 +91,10 @@
 - Produces: a batch-settlement `x402ResourceServer` using persistent `ChannelStorage`.
 - Produces: route startup that starts the channel manager while leaving session/watchdog APIs unchanged.
 
-- [ ] Convert the fake facilitator wire contract and write a failing test that the 402 advertises `batch-settlement` plus receiver-authorizer/withdraw-delay data.
-- [ ] Register `BatchSettlementEvmScheme`, expose its manager, and start claim/settle/refund jobs from `buildApp`.
-- [ ] Adapt settle-hook payer/transaction handling to deposit and voucher responses without changing session credit semantics.
-- [ ] Run `npx vitest run tests/contract.test.ts` outside the restricted socket sandbox.
+- [x] Convert the fake facilitator wire contract and write a failing test that the 402 advertises `batch-settlement` plus receiver-authorizer/withdraw-delay data.
+- [x] Register `BatchSettlementEvmScheme`, expose its manager, and start claim/settle/refund jobs from `buildApp`.
+- [x] Adapt settle-hook payer/transaction handling to deposit and voucher responses without changing session credit semantics.
+- [x] Run `npx vitest run tests/contract.test.ts` outside the restricted socket sandbox.
 
 ### Task 5: Agent channel client, display, and refund
 
@@ -108,11 +110,11 @@
 - Produces: a persistent `BatchSettlementEvmScheme` client with a 50,000-atomic initial deposit and 5,000-atomic top-up strategy.
 - Produces: client helpers for channel status and cooperative refund.
 
-- [ ] Write failing tests that two consecutive payments are deposit then voucher and cumulative allowance rises by exactly 40 atomic.
-- [ ] Replace the exact scheme with batch settlement, file storage, hooks, and corrective-402 support supplied by the package.
-- [ ] Return channel balance/signed ceiling/charged cumulative values from successful tick handling and render them.
-- [ ] On normal shutdown or a second interrupt, request cooperative refund without changing the first-interrupt stop-paying behavior.
-- [ ] Run `npx vitest run tests/wallet.test.ts tests/e2e.test.ts` outside the restricted socket sandbox.
+- [x] Write failing tests that two consecutive payments are deposit then voucher and cumulative allowance rises by exactly 40 atomic.
+- [x] Replace the exact scheme with batch settlement, file storage, hooks, and corrective-402 support supplied by the package.
+- [x] Return channel balance/signed ceiling/charged cumulative values from successful tick handling and render them.
+- [x] On normal shutdown or a second interrupt, request cooperative refund without changing the first-interrupt stop-paying behavior.
+- [x] Run `npx vitest run tests/wallet.test.ts tests/e2e.test.ts` outside the restricted socket sandbox.
 
 ### Task 6: Smoke command, docs, and full verification
 
@@ -125,8 +127,8 @@
 **Interfaces:**
 - Produces: `npm run smoke:channel` for manual deposit → vouchers → claim → refund verification.
 
-- [ ] Add the manual smoke runner and document required Fuji credentials and its state-changing nature.
-- [ ] Update local-run instructions from Docker x402-rs to `npm run facilitator`.
-- [ ] Run `npx tsc --noEmit`.
-- [ ] Run `npm test` and confirm all files pass with at least 80% coverage.
-- [ ] Review `git diff` against every acceptance criterion and report any item requiring the manual Fuji smoke run.
+- [x] Add the manual smoke runner and document required Fuji credentials and its state-changing nature.
+- [x] Update local-run instructions from Docker x402-rs to `npm run facilitator`.
+- [x] Run `npx tsc --noEmit`.
+- [x] Run `npm test` and confirm all files pass with at least 80% coverage.
+- [x] Review `git diff` against every acceptance criterion and report any item requiring the manual Fuji smoke run.
