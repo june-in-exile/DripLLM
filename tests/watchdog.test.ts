@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createWatchdog } from "../src/server/watchdog.js";
 import { createRegistry } from "../src/server/registry.js";
 import { createStreamHub } from "../src/server/stream.js";
@@ -117,5 +117,54 @@ describe("watchdog start/stop", () => {
     vi.advanceTimersByTime(60000);
     expect(hub.has("s1")).toBe(true);
     vi.useRealTimers();
+  });
+});
+
+describe("watchdog sweep —— server 端 demo log", () => {
+  function captureStdout(): string[] {
+    const out: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((c) => (out.push(String(c)), true));
+    return out;
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("已付時間用完時印一次寬限警告,同一格不重複印", () => {
+    const { watchdog } = setup();
+    const out = captureStdout();
+    watchdog.sweep(5999);
+    expect(out.join("")).not.toContain("寬限");
+    watchdog.sweep(6000);
+    watchdog.sweep(6100);
+    watchdog.sweep(7000);
+    const warns = out.filter((l) => l.includes("寬限"));
+    expect(warns).toEqual(["[watchdog] ⚠ session s1 · 已付時間用完,寬限 2000ms\n"]);
+  });
+
+  it("寬限中被補款延長,再次用完時重新警告", () => {
+    const { registry, watchdog } = setup();
+    const out = captureStdout();
+    watchdog.sweep(6000);
+    const extended = upsertSession(registry.getStore(), "s1", PAYER, 6500, 5000, 1000n, "0xtx2");
+    if (!extended.ok) throw new Error("extend failed");
+    registry.setStore(extended.store);
+    watchdog.sweep(6600);
+    watchdog.sweep(11500);
+    expect(out.filter((l) => l.includes("寬限"))).toHaveLength(2);
+  });
+
+  it("剪線時印出格數與總收入", () => {
+    const { watchdog } = setup();
+    const out = captureStdout();
+    watchdog.sweep(9000);
+    expect(out).toContain("[watchdog] ✂ session s1 · 切斷串流 · 共 1 格 · $0.001\n");
+  });
+
+  it("穩定補款(尚未用完)時完全不印", () => {
+    const { watchdog } = setup();
+    const out = captureStdout();
+    watchdog.sweep(3000);
+    watchdog.sweep(5900);
+    expect(out).toEqual([]);
   });
 });

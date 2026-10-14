@@ -184,6 +184,28 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     expect(elapsed).toBeLessThan(bound);
   });
 
+  it("剛補款就停付是最壞情況:剩餘額度超過一格,上界要再加 TOPUP_THRESHOLD(spec §12.9)", async () => {
+    const sessionId = crypto.randomUUID();
+    await payTick(wallet, config, sessionId);
+    // 等到剩餘額度接近補款門檻再補下一格 —— 補完的剩餘 = 一格 + 補款當下的剩餘,超過一格。
+    await new Promise((r) => setTimeout(r, config.creditPerTickMs - config.topupThresholdMs));
+    await payTick(wallet, config, sessionId);
+
+    const started = Date.now();
+    const res = await fetch(`${config.serverBaseUrl}/stream`, {
+      headers: { "X-Drip-Session": sessionId },
+    });
+    const frames = parseSse(await res.text());
+    const elapsed = Date.now() - started;
+
+    expect(frames.filter((f) => f.event === "cut")).toHaveLength(1);
+    // 剪線時間超過一格,證明「剩餘 0～1 格」的舊假設不成立。
+    expect(elapsed).toBeGreaterThan(config.creditPerTickMs);
+    const bound =
+      config.creditPerTickMs + config.topupThresholdMs + config.graceMs + config.watchdogSweepMs + 400;
+    expect(elapsed).toBeLessThan(bound);
+  });
+
   it("押金耗盡且買方不再補押金時回 402 且不建立 session", async () => {
     // 專屬的買方金鑰 = 專屬的 channelId,才不會動到其他案例的押金。
     // 押金 120 atomic = 3 格;第 4 格的上限就會超過餘額,必須被賣方擋下。

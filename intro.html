@@ -502,7 +502,7 @@
     <div class="title-row">
       <h1>DripLLM</h1>
       <div class="stamp">
-        x402 v2 · scheme <b>v2-eip155-exact</b><br>
+        x402 v2 · scheme <b>batch-settlement</b><br>
         Avalanche Fuji · <b>eip155:43113</b><br>
         Snowman finality <b>≈ 1s</b> · gas 厘級<br>
         測試網 USDC · 6 decimals
@@ -566,17 +566,17 @@
     <div class="rail">
       <div class="node">
         <div class="nm">買方 agent</div>
-        <div class="rl">src/agent/ · 錢包、花費上限<br>餘額將盡時補款</div>
+        <div class="rl">src/agent/ · 錢包、押金、花費上限<br>餘額將盡時簽下一張 voucher</div>
       </div>
       <div class="arrow">──▶</div>
       <div class="node cut">
         <div class="nm">賣方 server ✂</div>
-        <div class="rl">src/server/ · session 帳本<br>watchdog、SSE 串流</div>
+        <div class="rl">src/server/ · session 帳本、押金守門<br>watchdog、SSE、claim 排程</div>
       </div>
       <div class="arrow">──▶</div>
       <div class="node">
         <div class="nm">facilitator</div>
-        <div class="rl">自架 x402-rs (Docker)<br>驗簽 + Fuji 上結算</div>
+        <div class="rl">自架 TypeScript 版 · src/facilitator/<br>deposit / claim / settle / refund 上鏈</div>
       </div>
     </div>
 
@@ -584,11 +584,11 @@
       <div class="eyebrow" style="grid-column:1 / -1; margin:0">為什麼選 Avalanche</div>
       <div class="cell">
         <span class="k">次秒級確定性</span>
-        <span class="d">共識 ≈1s · settle 實測 7–11s</span>
+        <span class="d">共識 ≈1s · 開場 deposit 實測 5.6–6.9s</span>
       </div>
       <div class="cell">
         <span class="k">gas 厘級</span>
-        <span class="d">多次補款不被手續費吃垮</span>
+        <span class="d">鏈上只剩開場押金 + 定期批次請款</span>
       </div>
       <div class="cell">
         <span class="k">EVM 相容</span>
@@ -604,25 +604,25 @@
       <div>
         <div class="eyebrow">一次 tick 的資料流</div>
         <div class="flow">
-          <div class="step"><span class="k">1</span><span><code>POST /tick</code> 沒帶付款 → server 回 <b>HTTP 402</b> 附價格與收款資產</span></div>
-          <div class="step"><span class="k">2</span><span>agent 簽一筆 USDC 付款,塞進 <code>X-PAYMENT</code> header 重送</span></div>
-          <div class="step"><span class="k">3</span><span>facilitator 驗證簽章,並在 Fuji 上<b>結算</b></span></div>
-          <div class="step"><span class="k">4</span><span><code>onAfterSettle</code> 建立 session,回 <code>{ sessionId, accepted }</code></span></div>
+          <div class="step"><span class="k">1</span><span><code>POST /tick</code> 沒帶付款 → <b>HTTP 402</b>,付款要求放在 <code>PAYMENT-REQUIRED</code> header</span></div>
+          <div class="step"><span class="k">2</span><span><b>第一格</b>:簽 ERC-3009 押金 + 首張 voucher,放進 <code>PAYMENT-SIGNATURE</code> 重送,facilitator 代送上鏈</span></div>
+          <div class="step"><span class="k">3</span><span><b>之後每格</b>:只簽<b>鏈下</b> voucher(上限 = 已消耗 + 一格),往返實測 7–16ms</span></div>
+          <div class="step"><span class="k">4</span><span><code>onAfterSettle</code> 建立或延長 session,回 <code>{ sessionId, accepted }</code></span></div>
           <div class="step"><span class="k">5</span><span>agent 用該 sessionId 開 <code>GET /stream</code>,<b>token 開始流動</b></span></div>
-          <div class="step"><span class="k">6</span><span>餘額低於門檻時自動再送一筆 tick,把 <code>paidUntil</code> 往後延</span></div>
+          <div class="step"><span class="k">6</span><span><code>event: credit</code> 剩餘 &lt; 300ms 就再送一筆 <code>/tick</code>,延長 <code>paidUntil</code></span></div>
           <div class="step cut"><span class="k">✂</span><span>逾期又超過寬限 → server 送 <code>event: cut</code>,<b>主動關閉連線</b></span></div>
         </div>
       </div>
 
       <div class="stack">
         <div>
-          <div class="eyebrow">三個端點,只有一個收費</div>
+          <div class="eyebrow">端點:只有 /tick 收費</div>
           <table>
             <thead><tr><th>端點</th><th>x402</th><th>職責</th></tr></thead>
             <tbody>
-              <tr><td>POST /tick</td><td><span class="pill paid">收費</span></td><td>付一筆 → 建立或延長 session</td></tr>
+              <tr><td>POST /tick</td><td><span class="pill paid">收費</span></td><td>付一格 → 建立或延長 session</td></tr>
               <tr><td>GET /stream</td><td><span class="pill free">免費</span></td><td>SSE,session 活著就吐 token</td></tr>
-              <tr><td>GET /health</td><td><span class="pill free">免費</span></td><td>啟動檢查與 demo 腳本</td></tr>
+              <tr><td>GET /health</td><td><span class="pill free">免費</span></td><td>回 <code>{ ok, sessions }</code>,測試用</td></tr>
             </tbody>
           </table>
         </div>
@@ -652,11 +652,13 @@
         <table>
           <thead><tr><th>參數</th><th>值</th><th>說明</th></tr></thead>
           <tbody>
-            <tr><td>CREDIT_PER_TICK_MS</td><td class="num">25000</td><td>一筆付款買到的串流時間(實測 settle 7.4–10.6s)</td></tr>
-            <tr><td>TOPUP_THRESHOLD_MS</td><td class="num">15000</td><td>餘額低於此值即補款</td></tr>
-            <tr><td>GRACE_MS</td><td class="num">2000</td><td>逾期後才剪線的寬限</td></tr>
-            <tr><td>PRICE_PER_TICK_ATOMIC</td><td class="num">1000</td><td>0.001 USDC</td></tr>
-            <tr><td>MAX_SPEND_ATOMIC</td><td class="num">50000</td><td>0.05 USDC,約 50 個 tick</td></tr>
+            <tr><td>CREDIT_PER_TICK_MS</td><td class="num">1000</td><td>一格買到的串流時間(voucher 往返實測 7–16ms)</td></tr>
+            <tr><td>TOPUP_THRESHOLD_MS</td><td class="num">300</td><td>餘額低於此值即簽下一張 voucher</td></tr>
+            <tr><td>GRACE_MS</td><td class="num">250</td><td>逾期後才剪線的寬限</td></tr>
+            <tr><td>WATCHDOG_SWEEP_MS</td><td class="num">100</td><td>剪線掃描週期</td></tr>
+            <tr><td>PRICE_PER_TICK_ATOMIC</td><td class="num">40</td><td>0.00004 USDC</td></tr>
+            <tr><td>MAX_SPEND_ATOMIC</td><td class="num">50000</td><td>0.05 USDC,約 1,250 格</td></tr>
+            <tr><td>DEPOSIT_ATOMIC</td><td class="num">50000</td><td>開場押金,唯一要等鏈的一筆(實測 5.6–6.9s)</td></tr>
           </tbody>
         </table>
         <p class="fine">
@@ -666,7 +668,8 @@
         <div class="chips">
           <span class="chip"><b>@x402/express</b> · core · evm · fetch</span>
           <span class="chip"><b>viem</b></span>
-          <span class="chip">自架 <b>x402-rs</b></span>
+          <span class="chip">自架 <b>TS facilitator</b></span>
+          <span class="chip">BatchSettlement <b>0x4020…0003</b></span>
           <span class="chip">USDC <b>0x5425…Bc65</b></span>
           <span class="chip">EIP-712 domain <b>USD Coin</b></span>
         </div>
@@ -674,20 +677,22 @@
 
       <div class="stack">
         <div class="window">
-          <span class="big">17–35<span style="font-size:.42em; letter-spacing:0"> 秒</span></span>
-          <span class="lbl">從 <b>停止付款</b> 到 <b>服務真的停下來</b> 的曝險窗口;其中真正沒收到錢的流,只有 2s 寬限。</span>
+          <span class="big">≤1.65<span style="font-size:.42em; letter-spacing:0"> 秒</span></span>
+          <span class="lbl">從 <b>停止付款</b> 到 <b>服務真的停下來</b> 的曝險窗口上界;剪線判定不碰鏈。</span>
         </div>
 
         <div class="term">
-          <span class="t-dim">[server]</span> session 7f3a · 餘額 1.2s<br>
-          <span class="t-dim">[server]</span> session 7f3a · 餘額 0.4s<br>
-          <span class="t-dim">[server]</span> session 7f3a · <span class="t-warn">⚠ 逾期,寬限 2.0s</span><br>
-          <span class="t-dim">[server]</span> session 7f3a · <span class="t-cut">✂ 切斷串流</span>
+          <span class="t-dim">[hook]</span> · session 7f3a · tick #12 · voucher · 押金尚可 1238 格<br>
+          <span class="t-dim">[agent]</span> <span class="t-warn">⚠ 已停止付款,連線保持中 —— 等待 server 斷流</span><br>
+          <span class="t-dim">[watchdog]</span> <span class="t-warn">⚠ session 7f3a · 已付時間用完,寬限 250ms</span><br>
+          <span class="t-dim">[watchdog]</span> <span class="t-cut">✂ session 7f3a · 切斷串流 · 共 12 格 · $0.00048</span><br>
+          <span class="t-dim">[stream]</span> · session 7f3a 已由 server 剪線<br>
+          <span class="t-dim">[agent]</span> <span class="t-cut">✖ 串流已被 server 切斷 · 共 12 個 tick · 總花費 $0.00048</span>
         </div>
 
         <p class="fine">
-          <strong>第一次 Ctrl-C:</strong>agent 停止付款,但<strong>保持連線</strong>、繼續讀 stream。約 17～35 秒後 server 主動剪線,
-          第二次 Ctrl-C 才真正退出。第一次不斷線是整個 demo 成立的關鍵 —— agent 仍連著、仍在等待,<strong>線是 server 剪的</strong>。
+          <strong>第一次 Ctrl-C:</strong>agent 停止付款,但<strong>保持連線</strong>、繼續讀 stream。剩餘額度 + 250ms 寬限 + 一次 100ms sweep 後,
+          server 主動剪線;agent 收到 <code>event: cut</code> 即退還押金、自行結束。第一次不斷線是整個 demo 成立的關鍵 —— <strong>線是 server 剪的</strong>。
         </p>
 
         <p class="warn-strip">

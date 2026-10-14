@@ -41,12 +41,12 @@ DripLLM 是一個最小可跑專案。買方 agent 掛在一條 SSE 串流上,�
 
 一次 tick 的資料流:
 
-1. agent 送出 `POST /tick`,沒帶付款 → server 回 `HTTP 402` 附上價格、收款資產、`receiverAuthorizer` 與 `withdrawDelay`
-2. **第一格**:agent 簽一張 ERC-3009 授權把押金存進 payment channel 合約,並附上第一張累計 voucher,塞進 `X-PAYMENT` header 重送。facilitator 代送上鏈(gas 由它付,agent 不需要 AVAX)
+1. agent 啟動時送出第一筆 `POST /tick`(帶自己產生的 sessionId 於 `X-Drip-Session` header),沒帶付款 → server 回 `HTTP 402`,價格、收款資產、`receiverAuthorizer` 與 `withdrawDelay` 放在 `PAYMENT-REQUIRED` header(base64 JSON,body 為空物件)
+2. **第一格**:agent 簽一張 ERC-3009 授權把押金存進 payment channel 合約,並附上第一張累計 voucher,塞進 `PAYMENT-SIGNATURE` header 重送。facilitator 代送上鏈(gas 由它付,agent 不需要 AVAX)
 3. **之後每一格**:agent 只簽一張**鏈下** voucher —— 上限 = 已消耗 + 一格。不上鏈、不花 gas、毫秒級
-4. settle 成功後,server 在 `onAfterSettle` hook 中建立或延長 session;`/tick` 回 `{ sessionId, accepted: true }`,channel 狀態走 `X-PAYMENT-RESPONSE` header
-5. agent 用該 sessionId 開一條 `GET /stream` 的 SSE 連線,token 開始流動
-6. 餘額低於門檻時,agent 自動再送一筆 `POST /tick` 把 `paidUntil` 往後延
+4. settle 成功後,server 在 `onAfterSettle` hook 中建立或延長 session;`/tick` 回 `{ sessionId, accepted: true }`,channel 狀態走 `PAYMENT-RESPONSE` header
+5. agent 用該 sessionId 開一條 `GET /stream` 的 SSE 連線(整場只開這一條),token 開始流動
+6. server 每 `CREDIT_EVENT_MS`(預設 250ms)推一次 `event: credit`;agent 看到剩餘時間低於 `TOPUP_THRESHOLD_MS`(預設 300ms)就再送一筆 `POST /tick` 把 `paidUntil` 往後延 —— 補款由 credit 事件驅動,不是 agent 自己計時
 7. 賣方在熱路徑外**定期**把最新一張 voucher 拿去鏈上 claim,並把已請款餘額 settle 給收款地址;收工時退還未用完的押金
 
 **上鏈次數與格數脫鉤:** voucher 記的是**累計上限**,所以 1000 格只要提交最後一張,gas 與 1 格相同。一場串流的鏈上交易只有「開場押金 + 定期 claim/settle + 收工退款」。
@@ -61,11 +61,13 @@ DripLLM 是一個最小可跑專案。買方 agent 掛在一條 SSE 串流上,�
 
 ### 三個端點,只有一個收費
 
-| 端點 | x402 | 職責 |
-| --- | --- | --- |
-| `POST /tick` | 收費 | 付一筆 → 建立或延長 session |
-| `GET /stream` | 免費 | SSE,session 活著就吐 token(sessionId 走 `X-Drip-Session` header) |
-| `GET /health` | 免費 | 啟動檢查與 demo 腳本 |
+| 端點 | x402 | 職責 | 誰、何時打 |
+| --- | --- | --- | --- |
+| `POST /tick` | 收費 | 付一筆 → 建立或延長 session;sessionId 已被剪除時回 409(付款取消、未扣款) | agent:啟動時一次;之後每當 `event: credit` 的剩餘時間低於門檻 |
+| `GET /stream` | 免費 | SSE,session 活著就推 `token` / `credit` / `cut`(sessionId 走 `X-Drip-Session` header) | agent:第一筆 `/tick` 成功後開一次;回 404 時隔 300ms 重試一次 |
+| `GET /health` | 免費 | 回 `{ ok, sessions }`(目前 session 數) | agent 不打;給測試與手動檢查用 |
+
+賣方 server 啟動時打的是 **facilitator 的** `/health`,確認 facilitator 已在跑;沒回應就直接結束。
 
 `/stream` 免費不構成漏洞:**session 只有付過錢才存在**,不存在拿到免費 token 的路徑。這讓 x402 middleware 留在它天生擅長的 per-request 位置,SSE 那條完全不碰付款邏輯。
 
@@ -229,21 +231,23 @@ facilitator 沒起來時 server 會拒絕啟動,並直接告訴你原因。
 ## Demo 觀察重點
 
 - 每個 tick 的付款、tx hash、累計花費(USDC),以及持續流動的 token
-- server 端的餘額倒數 —— 讓觀眾知道那幾秒不是當機
+- server 端每格一行 voucher 紀錄;停付後由 watchdog 印出寬限警告與剪線結算 —— 線是誰剪的一目了然
 
   ```
-  [hook]    · session 7f3a · tick #12 · voucher · 押金尚可 1238 格
-  [server]  · session 7f3a · 餘額 0.4s
-  [server]  · session 7f3a · ⚠ 逾期,寬限 250ms
-  [server]  · session 7f3a · ✂ 切斷串流
+  [hook] · session 7f3a · tick #12 · voucher · 押金尚可 1238 格
+  [watchdog] ⚠ session 7f3a · 已付時間用完,寬限 250ms
+  [watchdog] ✂ session 7f3a · 切斷串流 · 共 12 格 · $0.00048
+  [stream] · session 7f3a 已由 server 剪線
   ```
+
+  一格只有 1 秒,穩定串流時餘額本來就在 1 秒內來回,所以 server 不逐次印倒數,只在真的用完時警告一次。
 
 - agent 端每格顯示押金餘額(`bal`)、已簽上限(`cap`)與累計消耗(`sum`)——
   只有第一格有 tx hash,之後都是 `voucher`
 
 - **第一次 Ctrl-C:** agent 停止付款,但**保持連線**、繼續讀取 stream
-- **斷流那一刻:** 停付到剪線的上界 = 剩餘額度 + `GRACE_MS` + 一個 sweep 週期 ≈ **1.35 秒**,agent 端顯示連線已被 server 關閉
-- 第二次 Ctrl-C 才真正退出
+- **斷流那一刻:** 停付到剪線 = 剩餘額度 + `GRACE_MS` + 一個 sweep 週期。剛補完款時剩餘最多是一格 + 補款門檻,所以上界 ≈ **1.65 秒**,agent 端顯示連線已被 server 關閉
+- 被剪線後 agent 會自動退還未用完的押金並結束;還沒被剪線前再按一次 Ctrl-C,則立即退款並退出
 
 第一次 Ctrl-C 不斷線是整個 demo 成立的關鍵 —— agent 仍連著、仍在等待,線是 server 剪的。把 `MAX_SPEND_ATOMIC` 調低,agent 撞上花費上限後會自動停付,產生一模一樣的斷流結果。
 
