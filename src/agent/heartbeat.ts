@@ -10,26 +10,26 @@ export type PayResult = Readonly<{
   chargedCumulative?: string;
 }>;
 
-/** sessionId 已被剪除且仍在 tombstone 期間 —— 付款已被 middleware 取消,未扣款。 */
+/** The sessionId has been cut and is still in its tombstone period -- the middleware cancelled the payment; nothing was charged. */
 export class SessionCutError extends Error {
   constructor() {
-    super("此 sessionId 已被剪除,需改用新的 sessionId");
+    super("This sessionId has been cut; use a new sessionId");
     this.name = "SessionCutError";
   }
 }
 
 /**
- * 本地 channel 紀錄與鏈上失步(通常是賣方端退款過)。
- * 丟掉紀錄重試一次就能由 recoverChannel 從鏈上重建。
+ * The local channel record is out of sync with the chain (usually because the seller refunded).
+ * Dropping the record and retrying once lets recoverChannel rebuild it from the chain.
  */
 class StaleChannelError extends Error {
   constructor(readonly accepted: ChannelRequirements) {
-    super("本地 channel 紀錄已過期");
+    super("Local channel record is stale");
     this.name = "StaleChannelError";
   }
 }
 
-/** 402 的付款要求與拒絕原因都放在 PAYMENT-REQUIRED header,body 是空物件。 */
+/** A 402's payment requirements and rejection reason both live in the PAYMENT-REQUIRED header; the body is an empty object. */
 function decodePaymentRequired(res: Response): {
   error: string;
   accepted: ChannelRequirements | undefined;
@@ -50,7 +50,7 @@ function decodePaymentRequired(res: Response): {
   }
 }
 
-/** settle 回應的 extra 由 server 與 facilitator 合併產生,對 agent 而言是外部輸入。 */
+/** The settle response's extra is merged by the server and the facilitator; to the agent it is external input. */
 const settleExtraSchema = z.object({
   channelState: z
     .object({
@@ -62,8 +62,8 @@ const settleExtraSchema = z.object({
 });
 
 /**
- * 付一格。本地 channel 紀錄過期時自動丟棄並重試一次 ——
- * 只重試一次,避免鏈上真的沒錢時陷入無限迴圈。
+ * Pay for one tick. If the local channel record is stale, drop it and retry once --
+ * only once, so we don't loop forever when the chain really has no money.
  */
 export async function payTick(
   wallet: ReturnType<typeof createWallet>,
@@ -79,9 +79,9 @@ export async function payTick(
   try {
     return await attemptTick(wallet, config, sessionId);
   } catch (e) {
-    // 從鏈上重建後還是不夠 —— 這次是真的沒押金,且補不進來。
+    // Still short after rebuilding from the chain -- this time the deposit really is gone and can't be topped up.
     if (e instanceof StaleChannelError) {
-      throw new Error("押金不足以支付下一格,且未能補上押金 —— 請確認買方錢包的 USDC 餘額");
+      throw new Error("Deposit cannot cover the next tick and could not be topped up - check the USDC balance of the buyer's wallet");
     }
     throw e;
   }
@@ -104,20 +104,20 @@ async function attemptTick(
       ? decodePaymentRequired(res)
       : { error: "", accepted: undefined };
     const detail = (await res.text().catch(() => "")) || reason;
-    // 上限超過押金餘額 = 本地紀錄比鏈上樂觀,丟掉重來一次就好。
+    // Cap exceeds the deposit = the local record is more optimistic than the chain; drop it and try again.
     if (reason.includes("cumulative_exceeds_balance") && accepted) {
       throw new StaleChannelError(accepted);
     }
-    // 只認錢包層的餘額不足。不可寫成鬆散的 /balance/ ——
-    // 那會把 channel 的 cumulative_exceeds_balance 一起誤判成錢包沒錢。
+    // Only match an insufficient balance at the wallet level. Never loosen this to /balance/ --
+    // that would also misread the channel's cumulative_exceeds_balance as an empty wallet.
     if (res.status === 402 && /insufficient[ _-]?(funds|balance)/i.test(`${reason} ${detail}`)) {
-      throw new Error(`USDC 餘額不足 —— 前往 Circle faucet 領取(${reason || detail})`);
+      throw new Error(`Insufficient USDC balance - get some from the Circle faucet (${reason || detail})`);
     }
-    throw new Error(`付款失敗:HTTP ${res.status}${reason ? ` ${reason}` : ""} ${detail}`.trim());
+    throw new Error(`Payment failed: HTTP ${res.status}${reason ? ` ${reason}` : ""} ${detail}`.trim());
   }
 
   const body = (await res.json()) as { sessionId: string };
-  // txHash 走 header,不在 body 中(spec §2.5)
+  // txHash comes in a header, not the body (spec §2.5)
   const settle = wallet.httpClient.getPaymentSettleResponse((n) => res.headers.get(n));
   const parsed = settleExtraSchema.safeParse(settle.extra);
   const channelState = parsed.success ? parsed.data.channelState : undefined;
@@ -128,8 +128,8 @@ async function attemptTick(
     sessionId: body.sessionId,
     txHash: settle.transaction || undefined,
     channelBalance: channelState?.balance,
-    // 曝險是「已簽的上限」,不是「已消耗」(spec §2.4)。套件只在 corrective recovery
-    // 後才寫 signedMaxClaimable,平常兩者相等,所以退回已消耗作為近似值。
+    // Exposure is the "signed cap", not "consumed" (spec §2.4). The package only writes signedMaxClaimable
+    // after a corrective recovery; normally the two are equal, so fall back to consumed as an approximation.
     signedCeiling: clientChannel?.signedMaxClaimable ?? clientChannel?.chargedCumulativeAmount,
     chargedCumulative: channelState?.chargedCumulativeAmount,
   };

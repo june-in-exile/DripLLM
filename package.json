@@ -1,7 +1,7 @@
 {
   "name": "dripllm",
   "version": "1.0.0",
-  "description": "> 按用量付費的 LLM 推論串流 —— 持續付費才有推論,停付就被剪線。",
+  "description": "Pay-as-you-go LLM inference streaming: keep paying and the inference keeps flowing; stop paying and the line gets cut.",
   "main": "index.js",
   "directories": {
     "doc": "docs"

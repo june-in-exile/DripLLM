@@ -14,7 +14,7 @@ type FacilitatorBody = {
 function requirePaymentBody(req: Request, res: Response): FacilitatorBody | null {
   const body = req.body as FacilitatorBody;
   if (!body?.paymentPayload || !body.paymentRequirements) {
-    res.status(400).json({ error: "paymentPayload 與 paymentRequirements 為必填" });
+    res.status(400).json({ error: "paymentPayload and paymentRequirements are required" });
     return null;
   }
   return body;

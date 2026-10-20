@@ -18,22 +18,22 @@ function setup(nowMs = 1000, creditMs = 5000) {
   return { registry, hub, watchdog, res: res as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> } };
 }
 
-describe("watchdog sweep —— 寬限期邊界", () => {
-  it("寬限期最後 1ms 不剪", () => {
+describe("watchdog sweep — grace period boundary", () => {
+  it("doesn't cut in the last 1ms of grace", () => {
     const { watchdog, hub } = setup();
     watchdog.sweep(8000);
     expect(hub.has("s1")).toBe(true);
   });
 
-  it("超過寬限 1ms 即剪", () => {
+  it("cuts 1ms past grace", () => {
     const { watchdog, hub } = setup();
     watchdog.sweep(8001);
     expect(hub.has("s1")).toBe(false);
   });
 });
 
-describe("watchdog sweep —— 剪線副作用", () => {
-  it("cut payload 帶正確的 tickCount 與 spentAtomic(須在移除前取值)", () => {
+describe("watchdog sweep — cut side effects", () => {
+  it("cut payload carries correct tickCount and spentAtomic (must be read before removal)", () => {
     const { registry, watchdog, res } = setup();
     const second = upsertSession(registry.getStore(), "s1", PAYER, 2000, 5000, 1000n, "0xtx2");
     if (!second.ok) throw new Error("extend failed");
@@ -48,25 +48,25 @@ describe("watchdog sweep —— 剪線副作用", () => {
     expect(written).not.toContain("undefined");
   });
 
-  it("剪線後 session 自帳本移除", () => {
+  it("the session is removed from the ledger after a cut", () => {
     const { registry, watchdog } = setup();
     watchdog.sweep(9000);
     expect(registry.getStore().has("s1")).toBe(false);
   });
 
-  it("剪線後 id 進入 tombstone", () => {
+  it("the id goes into the tombstone after a cut", () => {
     const { registry, watchdog } = setup();
     watchdog.sweep(9000);
     expect(registry.isCut("s1", 9000, 60000)).toBe(true);
   });
 
-  it("連線被關閉", () => {
+  it("the connection is closed", () => {
     const { watchdog, res } = setup();
     watchdog.sweep(9000);
     expect(res.end).toHaveBeenCalled();
   });
 
-  it("重複 sweep 不重複剪線(冪等)", () => {
+  it("repeated sweeps don't cut twice (idempotent)", () => {
     const { watchdog, res } = setup();
     watchdog.sweep(9000);
     watchdog.sweep(9500);
@@ -74,10 +74,10 @@ describe("watchdog sweep —— 剪線副作用", () => {
   });
 });
 
-describe("watchdog sweep —— 剪線順序防線(觀察中間狀態)", () => {
-  it("cut frame 寫出時 session 已不在帳本(先移除、後送 cut)", () => {
+describe("watchdog sweep — cut ordering safeguards (observing intermediate state)", () => {
+  it("the session is already out of the ledger when the cut frame is written (remove first, then send cut)", () => {
     const { registry, watchdog, res } = setup();
-    // res.write 在 hub.cut 內部同步觸發 —— 在此刻檢查帳本,能觀察「cut 當下」的中間狀態。
+    // res.write fires synchronously inside hub.cut — checking the ledger here observes the intermediate state "at the moment of cut".
     res.write.mockImplementation(() => {
       expect(registry.getStore().has("s1")).toBe(false);
     });
@@ -85,7 +85,7 @@ describe("watchdog sweep —— 剪線順序防線(觀察中間狀態)", () => {
     expect(res.write).toHaveBeenCalled();
   });
 
-  it("onCut 觸發時帳本已無此 session(先移除、後通知)", () => {
+  it("the ledger no longer has this session when onCut fires (remove first, then notify)", () => {
     const registry = createRegistry();
     const hub = createStreamHub();
     const r = upsertSession(registry.getStore(), "s1", PAYER, 1000, 5000, 1000n, "0xtx");
@@ -109,7 +109,7 @@ describe("watchdog sweep —— 剪線順序防線(觀察中間狀態)", () => {
 });
 
 describe("watchdog start/stop", () => {
-  it("stop 後不再觸發 sweep", () => {
+  it("no more sweeps after stop", () => {
     vi.useFakeTimers();
     const { watchdog, hub } = setup();
     watchdog.start(250);
@@ -120,7 +120,7 @@ describe("watchdog start/stop", () => {
   });
 });
 
-describe("watchdog sweep —— server 端 demo log", () => {
+describe("watchdog sweep — server-side demo log", () => {
   function captureStdout(): string[] {
     const out: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((c) => (out.push(String(c)), true));
@@ -129,19 +129,19 @@ describe("watchdog sweep —— server 端 demo log", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("已付時間用完時印一次寬限警告,同一格不重複印", () => {
+  it("prints the grace warning once when paid time runs out, not again for the same tick", () => {
     const { watchdog } = setup();
     const out = captureStdout();
     watchdog.sweep(5999);
-    expect(out.join("")).not.toContain("寬限");
+    expect(out.join("")).not.toContain("grace");
     watchdog.sweep(6000);
     watchdog.sweep(6100);
     watchdog.sweep(7000);
-    const warns = out.filter((l) => l.includes("寬限"));
-    expect(warns).toEqual(["[watchdog] ⚠ session s1 · 已付時間用完,寬限 2000ms\n"]);
+    const warns = out.filter((l) => l.includes("grace"));
+    expect(warns).toEqual(["[watchdog] ⚠ session s1 · paid time used up, grace period 2000ms\n"]);
   });
 
-  it("寬限中被補款延長,再次用完時重新警告", () => {
+  it("warns again when a top-up extends it during grace and it then runs out again", () => {
     const { registry, watchdog } = setup();
     const out = captureStdout();
     watchdog.sweep(6000);
@@ -150,17 +150,17 @@ describe("watchdog sweep —— server 端 demo log", () => {
     registry.setStore(extended.store);
     watchdog.sweep(6600);
     watchdog.sweep(11500);
-    expect(out.filter((l) => l.includes("寬限"))).toHaveLength(2);
+    expect(out.filter((l) => l.includes("grace"))).toHaveLength(2);
   });
 
-  it("剪線時印出格數與總收入", () => {
+  it("prints the tick count and total revenue on cut", () => {
     const { watchdog } = setup();
     const out = captureStdout();
     watchdog.sweep(9000);
-    expect(out).toContain("[watchdog] ✂ session s1 · 切斷串流 · 共 1 格 · $0.001\n");
+    expect(out).toContain("[watchdog] ✂ session s1 · stream cut · 1 ticks total · $0.001\n");
   });
 
-  it("穩定補款(尚未用完)時完全不印", () => {
+  it("prints nothing during steady top-ups (not yet run out)", () => {
     const { watchdog } = setup();
     const out = captureStdout();
     watchdog.sweep(3000);

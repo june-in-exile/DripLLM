@@ -12,16 +12,16 @@ const schema = z
     FACILITATOR_PORT: z.coerce.number().int().positive().default(8080),
     SERVER_BASE_URL: z.string().url().default("http://localhost:4021"),
     FACILITATOR_URL: z.string().url(),
-    FACILITATOR_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, "須為 0x 開頭的 64 位十六進位私鑰"),
+    FACILITATOR_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, "must be a 0x-prefixed 64-digit hex private key"),
     FUJI_RPC_URL: z.string().url().default("https://api.avax-test.network/ext/bc/C/rpc"),
-    LLM_PROVIDER_ADDRESS: z.string().regex(ADDRESS, "須為 0x 開頭的 40 位十六進位地址"),
-    // 選填。設了就由賣方自己簽 claim/refund 授權(spec §2.4 的 receiverAuthorizer);
-    // 留空則委派給 facilitator,由它在 /supported 廣告 receiverAuthorizer。
+    LLM_PROVIDER_ADDRESS: z.string().regex(ADDRESS, "must be a 0x-prefixed 40-digit hex address"),
+    // Optional. If set, the seller signs claim/refund authorizations itself (the receiverAuthorizer in spec §2.4);
+    // if empty, this is delegated to the facilitator, which advertises a receiverAuthorizer on /supported.
     LLM_PROVIDER_AUTHORIZER_PRIVATE_KEY: z
       .string()
-      .regex(PRIVATE_KEY, "須為 0x 開頭的 64 位十六進位私鑰")
+      .regex(PRIVATE_KEY, "must be a 0x-prefixed 64-digit hex private key")
       .optional(),
-    AGENT_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, "須為 0x 開頭的 64 位十六進位私鑰"),
+    AGENT_PRIVATE_KEY: z.string().regex(PRIVATE_KEY, "must be a 0x-prefixed 64-digit hex private key"),
     CREDIT_PER_TICK_MS: z.coerce.number().int().positive().default(1000),
     TOPUP_THRESHOLD_MS: z.coerce.number().int().positive().default(300),
     GRACE_MS: z.coerce.number().int().positive().default(250),
@@ -38,23 +38,23 @@ const schema = z
     SETTLE_INTERVAL_SECS: z.coerce.number().int().positive().default(300),
     REFUND_IDLE_SECS: z.coerce.number().int().positive().default(120),
     MAX_CLAIMS_PER_BATCH: z.coerce.number().int().positive().default(20),
-    // 提領插隊的輪詢間隔。每次都會掃過整個 channel storage,不可設得像 watchdog 那麼密;
-    // 只要遠小於 WITHDRAW_DELAY_SECS 就有足夠的 claim 餘裕(spec §2.5.2)。
+    // Poll interval for front-running withdrawals. Each poll scans the whole channel storage, so don't make it as tight as the watchdog;
+    // as long as it is far below WITHDRAW_DELAY_SECS there is plenty of room to claim (spec §2.5.2).
     WITHDRAW_POLL_MS: z.coerce.number().int().positive().default(5_000),
     CHANNEL_STORAGE_DIR: z.string().min(1).default(".dripllm/channels"),
     FACILITATOR_POLLING_MS: z.coerce.number().int().positive().default(250),
     FACILITATOR_CONFIRMATION_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
   })
   .refine((c) => c.TOPUP_THRESHOLD_MS < c.CREDIT_PER_TICK_MS, {
-    message: "TOPUP_THRESHOLD_MS 必須小於 CREDIT_PER_TICK_MS,否則補款永遠追不上消耗",
+    message: "TOPUP_THRESHOLD_MS must be less than CREDIT_PER_TICK_MS, otherwise top-ups can never keep up with consumption",
     path: ["TOPUP_THRESHOLD_MS"],
   })
   .refine((c) => c.WITHDRAW_DELAY_SECS > c.CLAIM_INTERVAL_SECS, {
-    message: "WITHDRAW_DELAY_SECS 必須大於 CLAIM_INTERVAL_SECS",
+    message: "WITHDRAW_DELAY_SECS must be greater than CLAIM_INTERVAL_SECS",
     path: ["WITHDRAW_DELAY_SECS"],
   })
   .refine((c) => c.WITHDRAW_POLL_MS < c.WITHDRAW_DELAY_SECS * 1_000, {
-    message: "WITHDRAW_POLL_MS 必須小於 WITHDRAW_DELAY_SECS,否則提領插隊永遠來不及",
+    message: "WITHDRAW_POLL_MS must be less than WITHDRAW_DELAY_SECS, otherwise a withdrawal can never be front-run in time",
     path: ["WITHDRAW_POLL_MS"],
   });
 
@@ -94,7 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
     const lines = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`);
-    throw new ConfigError(`環境變數設定有誤,請修正以下全部項目:\n${lines.join("\n")}`);
+    throw new ConfigError(`Invalid environment variables; fix all of the following:\n${lines.join("\n")}`);
   }
   const v = parsed.data;
   return Object.freeze({

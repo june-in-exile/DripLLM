@@ -1,6 +1,6 @@
 export class PayerUnknownError extends Error {
   constructor() {
-    super("無法確認付款者身分,拒絕建立 session");
+    super("cannot determine payer identity, refusing to create session");
     this.name = "PayerUnknownError";
   }
 }
@@ -15,9 +15,9 @@ function asAddress(v: unknown): string | null {
 }
 
 /**
- * 付款者身分的唯一來源。
- * authorization.from 為必填且屬 EIP-712 簽章的一部分;SettleResponse.payer 為 optional,
- * 僅作後備。兩者皆空時必須拋錯 —— 綁定 undefined 會讓 payer 比對恆為真(spec §2.6)。
+ * The single source of payer identity.
+ * authorization.from is required and part of the EIP-712 signature; SettleResponse.payer is optional,
+ * a fallback only. If both are empty we must throw — binding undefined would make the payer comparison always true (spec §2.6).
  */
 export function extractPayer(payload: unknown, settlePayer?: string): string {
   const from =

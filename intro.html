@@ -1,4 +1,5 @@
-<title>DripLLM 按秒計費</title>
+<html lang="en">
+<title>DripLLM Per-Second Billing</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
@@ -498,58 +499,58 @@
 <div class="deck">
 
   <!-- ============ 1 ============ -->
-  <section class="slide" id="s1" aria-label="投影片 1:定位與風險">
+  <section class="slide" id="s1" aria-label="Slide 1: Positioning and risk">
     <div class="title-row">
       <h1>DripLLM</h1>
       <div class="stamp">
         x402 v2 · scheme <b>batch-settlement</b><br>
         Avalanche Fuji · <b>eip155:43113</b><br>
-        Snowman finality <b>≈ 1s</b> · gas 厘級<br>
-        測試網 USDC · 6 decimals
+        Snowman finality <b>≈ 1s</b> · sub-cent gas<br>
+        Testnet USDC · 6 decimals
       </div>
     </div>
 
     <p class="lede">
-      讓沒有計費基礎設施的小型推論供應商,能對<strong>機器客戶按秒收費</strong> —— 持續付費才有推論,停付就被剪線。
+      Lets small inference providers with no billing infrastructure <strong>charge machine customers by the second</strong>: keep paying and the inference keeps flowing; stop paying and the line gets cut.
     </p>
 
     <div class="split">
       <div class="stack">
         <div>
-          <div class="eyebrow">問題</div>
+          <div class="eyebrow">The problem</div>
           <p class="fine" style="margin-top:.5em">
-            想收費就得先建帳號系統、金流、發票、授信催收、退款爭議、防詐。
-            <strong>這套成本與客戶數無關,是固定門檻</strong> —— 大公司攤得掉,一個人跑自架模型的攤不掉。
+            Charging money first means building accounts, payment integration, invoicing, credit and collections, refund disputes, fraud prevention.
+            <strong>That cost doesn't scale with the number of customers; it's a fixed barrier to entry.</strong> Big companies can amortize it; one person running a self-hosted model can't.
           </p>
           <p class="fine" style="margin-top:.7em">
-            走這條路,供應商只需要<strong>一個收款地址加一段 middleware</strong>。
-            成本結構也對得上:小型自架供應商的真實成本是 <strong>GPU 被佔用的時間</strong>,不是 token 數。
+            With this approach, a provider needs only <strong>a receiving address and a piece of middleware</strong>.
+            The cost structure lines up too: for a small self-hosted provider, the real cost is <strong>the time the GPU is occupied</strong>, not the token count.
           </p>
         </div>
         <div class="barrier">
-          <div class="eyebrow" style="color:var(--alert)">一個硬邊界</div>
+          <div class="eyebrow" style="color:var(--alert)">A hard boundary</div>
           <p class="fine" style="margin-top:.5em">
-            門檻沒有消失,是<strong>換邊</strong>了:每個客戶都得有一個裝了 USDC 的錢包。
-            對人類客戶這是死穴;對 agent 不是 —— agent 本來就是被程式佈建出來的。
+            The barrier doesn't disappear; it <strong>changes sides</strong>: every customer needs a wallet holding USDC.
+            For human customers that's a dealbreaker; for agents it isn't, since agents are provisioned by code in the first place.
           </p>
         </div>
       </div>
 
       <div>
-        <div class="eyebrow">串流計費 <span class="num">誰承擔風險</span></div>
+        <div class="eyebrow">Billing a stream <span class="num">Who bears the risk</span></div>
         <div class="ledger">
-          <div class="ledger-cap">一般 request/response 用 per-request x402 就夠了。沒有現成答案的是<strong>跑好幾分鐘的串流</strong>。</div>
+          <div class="ledger-cap">For ordinary request/response, per-request x402 is enough. What has no off-the-shelf answer is <strong>a stream that runs for several minutes</strong>.</div>
           <div class="ledger-row">
-            <span class="way">整段預收</span>
-            <span class="who">買方承擔對手方風險 —— 付了錢對方跑掉</span>
+            <span class="way">Prepay the whole thing</span>
+            <span class="who">The buyer bears counterparty risk: pays, and the seller disappears</span>
           </div>
           <div class="ledger-row">
-            <span class="way">先給後收</span>
-            <span class="who">賣方承擔授信風險 —— 送完了對方不付</span>
+            <span class="way">Serve first, bill later</span>
+            <span class="who">The seller bears credit risk: delivers, and the buyer never pays</span>
           </div>
           <div class="ledger-row win">
-            <span class="way">切成一格一格</span>
-            <span class="who">任一方對另一方的曝險<strong>都不超過一格</strong></span>
+            <span class="way">Slice it into ticks</span>
+            <span class="who">Neither side's exposure to the other <strong>ever exceeds one tick</strong></span>
           </div>
         </div>
       </div>
@@ -557,118 +558,118 @@
   </section>
 
   <!-- ============ 2 ============ -->
-  <section class="slide" id="s2" hidden aria-label="投影片 2:運作原理">
+  <section class="slide" id="s2" hidden aria-label="Slide 2: How it works">
     <div>
-      <div class="eyebrow"><span class="num">02</span> 運作原理</div>
-      <h2 style="margin-top:.28em">一筆付款買一段時間,watchdog 負責剪線</h2>
+      <div class="eyebrow"><span class="num">02</span> How it works</div>
+      <h2 style="margin-top:.28em">Each payment buys a slice of time; the watchdog does the cutting</h2>
     </div>
 
     <div class="rail">
       <div class="node">
-        <div class="nm">買方 agent</div>
-        <div class="rl">src/agent/ · 錢包、押金、花費上限<br>餘額將盡時簽下一張 voucher</div>
+        <div class="nm">Buyer agent</div>
+        <div class="rl">src/agent/ · wallet, deposit, spending cap<br>signs the next voucher when credit runs low</div>
       </div>
       <div class="arrow">──▶</div>
       <div class="node cut">
-        <div class="nm">賣方 server ✂</div>
-        <div class="rl">src/server/ · session 帳本、押金守門<br>watchdog、SSE、claim 排程</div>
+        <div class="nm">Seller server ✂</div>
+        <div class="rl">src/server/ · session ledger, deposit gatekeeping<br>watchdog, SSE, claim scheduling</div>
       </div>
       <div class="arrow">──▶</div>
       <div class="node">
-        <div class="nm">facilitator</div>
-        <div class="rl">自架 TypeScript 版 · src/facilitator/<br>deposit / claim / settle / refund 上鏈</div>
+        <div class="nm">Facilitator</div>
+        <div class="rl">Self-hosted TypeScript · src/facilitator/<br>submits deposit / claim / settle / refund on-chain</div>
       </div>
     </div>
 
     <div class="whyavax">
-      <div class="eyebrow" style="grid-column:1 / -1; margin:0">為什麼選 Avalanche</div>
+      <div class="eyebrow" style="grid-column:1 / -1; margin:0">Why Avalanche</div>
       <div class="cell">
-        <span class="k">次秒級確定性</span>
-        <span class="d">共識 ≈1s · 開場 deposit 實測 5.6–6.9s</span>
+        <span class="k">Sub-second finality</span>
+        <span class="d">Consensus ≈1s · opening deposit measured 5.6–6.9s</span>
       </div>
       <div class="cell">
-        <span class="k">gas 厘級</span>
-        <span class="d">鏈上只剩開場押金 + 定期批次請款</span>
+        <span class="k">Sub-cent gas</span>
+        <span class="d">Only the opening deposit + periodic batch claims go on-chain</span>
       </div>
       <div class="cell">
-        <span class="k">EVM 相容</span>
-        <span class="d">EIP-712 / ERC-20 工具鏈直接沿用</span>
+        <span class="k">EVM-compatible</span>
+        <span class="d">EIP-712 / ERC-20 tooling carries over directly</span>
       </div>
       <div class="cell">
-        <span class="k">L1 擴展</span>
-        <span class="d">日後可佈建專屬鏈,手續費自訂</span>
+        <span class="k">L1 scaling</span>
+        <span class="d">A dedicated chain with custom fees can be provisioned later</span>
       </div>
     </div>
 
     <div class="split grow">
       <div>
-        <div class="eyebrow">一次 tick 的資料流</div>
+        <div class="eyebrow">Data flow of one tick</div>
         <div class="flow">
-          <div class="step"><span class="k">1</span><span><code>POST /tick</code> 沒帶付款 → <b>HTTP 402</b>,付款要求放在 <code>PAYMENT-REQUIRED</code> header</span></div>
-          <div class="step"><span class="k">2</span><span><b>第一格</b>:簽 ERC-3009 押金 + 首張 voucher,放進 <code>PAYMENT-SIGNATURE</code> 重送,facilitator 代送上鏈</span></div>
-          <div class="step"><span class="k">3</span><span><b>之後每格</b>:只簽<b>鏈下</b> voucher(上限 = 已消耗 + 一格),往返實測 7–16ms</span></div>
-          <div class="step"><span class="k">4</span><span><code>onAfterSettle</code> 建立或延長 session,回 <code>{ sessionId, accepted }</code></span></div>
-          <div class="step"><span class="k">5</span><span>agent 用該 sessionId 開 <code>GET /stream</code>,<b>token 開始流動</b></span></div>
-          <div class="step"><span class="k">6</span><span><code>event: credit</code> 剩餘 &lt; 300ms 就再送一筆 <code>/tick</code>,延長 <code>paidUntil</code></span></div>
-          <div class="step cut"><span class="k">✂</span><span>逾期又超過寬限 → server 送 <code>event: cut</code>,<b>主動關閉連線</b></span></div>
+          <div class="step"><span class="k">1</span><span><code>POST /tick</code> without payment → <b>HTTP 402</b>, with payment requirements in the <code>PAYMENT-REQUIRED</code> header</span></div>
+          <div class="step"><span class="k">2</span><span><b>First tick</b>: sign an ERC-3009 deposit + the first voucher, put them in <code>PAYMENT-SIGNATURE</code> and resend; the facilitator submits on-chain</span></div>
+          <div class="step"><span class="k">3</span><span><b>Every tick after</b>: sign only an <b>off-chain</b> voucher (cap = consumed + one tick); round trip measured 7–16ms</span></div>
+          <div class="step"><span class="k">4</span><span><code>onAfterSettle</code> creates or extends the session and returns <code>{ sessionId, accepted }</code></span></div>
+          <div class="step"><span class="k">5</span><span>The agent uses that sessionId to open <code>GET /stream</code>, and <b>tokens start flowing</b></span></div>
+          <div class="step"><span class="k">6</span><span>When <code>event: credit</code> shows &lt; 300ms remaining, send another <code>/tick</code> to extend <code>paidUntil</code></span></div>
+          <div class="step cut"><span class="k">✂</span><span>Overdue and past the grace period → the server sends <code>event: cut</code> and <b>actively closes the connection</b></span></div>
         </div>
       </div>
 
       <div class="stack">
         <div>
-          <div class="eyebrow">端點:只有 /tick 收費</div>
+          <div class="eyebrow">Endpoints: only /tick is paid</div>
           <table>
-            <thead><tr><th>端點</th><th>x402</th><th>職責</th></tr></thead>
+            <thead><tr><th>Endpoint</th><th>x402</th><th>Responsibility</th></tr></thead>
             <tbody>
-              <tr><td>POST /tick</td><td><span class="pill paid">收費</span></td><td>付一格 → 建立或延長 session</td></tr>
-              <tr><td>GET /stream</td><td><span class="pill free">免費</span></td><td>SSE,session 活著就吐 token</td></tr>
-              <tr><td>GET /health</td><td><span class="pill free">免費</span></td><td>回 <code>{ ok, sessions }</code>,測試用</td></tr>
+              <tr><td>POST /tick</td><td><span class="pill paid">Paid</span></td><td>Pay for a tick → create or extend the session</td></tr>
+              <tr><td>GET /stream</td><td><span class="pill free">Free</span></td><td>SSE; emits tokens while the session is alive</td></tr>
+              <tr><td>GET /health</td><td><span class="pill free">Free</span></td><td>Returns <code>{ ok, sessions }</code>, for tests</td></tr>
             </tbody>
           </table>
         </div>
         <div class="note">
           <p class="fine">
-            <strong><code>/stream</code> 免費不構成漏洞:session 只有付過錢才存在。</strong>
-            這讓 x402 middleware 留在它天生擅長的 per-request 位置,SSE 那條完全不碰付款邏輯。
+            <strong><code>/stream</code> being free isn't a loophole: a session only exists once it has been paid for.</strong>
+            This keeps the x402 middleware in the per-request position it's naturally good at, and the SSE path never touches payment logic.
           </p>
         </div>
         <p class="fine">
-          <strong>為什麼要長連線:</strong>若每個 tick 都是獨立 request,「斷流」不過是 agent 自己 break 迴圈,
-          server 從頭到尾沒行使任何權力。長連線下 agent 還連著、還想要,線卻被剪了。
+          <strong>Why a long-lived connection:</strong> if every tick were an independent request, "cutting the stream" would just be the agent breaking out of its own loop,
+          and the server would never exercise any power at all. With a long-lived connection, the agent is still connected and still wants more, yet the line gets cut.
         </p>
       </div>
     </div>
   </section>
 
   <!-- ============ 3 ============ -->
-  <section class="slide" id="s3" hidden aria-label="投影片 3:參數與 Demo">
+  <section class="slide" id="s3" hidden aria-label="Slide 3: Parameters and demo">
     <div>
-      <div class="eyebrow"><span class="num">03</span> 參數與 Demo 觀察重點</div>
-      <h2 style="margin-top:.28em">有意義的量只有一個:曝險窗口</h2>
+      <div class="eyebrow"><span class="num">03</span> Parameters and what to watch in the demo</div>
+      <h2 style="margin-top:.28em">Only one quantity matters: the exposure window</h2>
     </div>
 
     <div class="split grow">
       <div class="stack">
         <table>
-          <thead><tr><th>參數</th><th>值</th><th>說明</th></tr></thead>
+          <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td>CREDIT_PER_TICK_MS</td><td class="num">1000</td><td>一格買到的串流時間(voucher 往返實測 7–16ms)</td></tr>
-            <tr><td>TOPUP_THRESHOLD_MS</td><td class="num">300</td><td>餘額低於此值即簽下一張 voucher</td></tr>
-            <tr><td>GRACE_MS</td><td class="num">250</td><td>逾期後才剪線的寬限</td></tr>
-            <tr><td>WATCHDOG_SWEEP_MS</td><td class="num">100</td><td>剪線掃描週期</td></tr>
+            <tr><td>CREDIT_PER_TICK_MS</td><td class="num">1000</td><td>Streaming time bought by one tick (voucher round trip measured 7–16ms)</td></tr>
+            <tr><td>TOPUP_THRESHOLD_MS</td><td class="num">300</td><td>Sign the next voucher when remaining credit drops below this</td></tr>
+            <tr><td>GRACE_MS</td><td class="num">250</td><td>Grace period after going overdue before the cut</td></tr>
+            <tr><td>WATCHDOG_SWEEP_MS</td><td class="num">100</td><td>Cut sweep interval</td></tr>
             <tr><td>PRICE_PER_TICK_ATOMIC</td><td class="num">40</td><td>0.00004 USDC</td></tr>
-            <tr><td>MAX_SPEND_ATOMIC</td><td class="num">50000</td><td>0.05 USDC,約 1,250 格</td></tr>
-            <tr><td>DEPOSIT_ATOMIC</td><td class="num">50000</td><td>開場押金,唯一要等鏈的一筆(實測 5.6–6.9s)</td></tr>
+            <tr><td>MAX_SPEND_ATOMIC</td><td class="num">50000</td><td>0.05 USDC, about 1,250 ticks</td></tr>
+            <tr><td>DEPOSIT_ATOMIC</td><td class="num">50000</td><td>Opening deposit, the only transaction that waits on the chain (measured 5.6–6.9s)</td></tr>
           </tbody>
         </table>
         <p class="fine">
-          agent 是在<strong>餘額將盡時</strong>補款,不是固定間隔付款 —— 否則網路與結算延遲會讓餘額逐 tick 向下漂移,
-          幾個 tick 後就自行斷流。所有參數經 <code>src/config.ts</code> 以 zod 驗證後注入,無硬編碼。
+          The agent tops up <strong>when its credit is about to run out</strong>, not on a fixed interval. Otherwise network and settlement latency would make the credit drift downward tick by tick,
+          and after a few ticks the stream would cut itself off. All parameters are validated with zod by <code>src/config.ts</code> before injection; nothing is hard-coded.
         </p>
         <div class="chips">
           <span class="chip"><b>@x402/express</b> · core · evm · fetch</span>
           <span class="chip"><b>viem</b></span>
-          <span class="chip">自架 <b>TS facilitator</b></span>
+          <span class="chip">Self-hosted <b>TS facilitator</b></span>
           <span class="chip">BatchSettlement <b>0x4020…0003</b></span>
           <span class="chip">USDC <b>0x5425…Bc65</b></span>
           <span class="chip">EIP-712 domain <b>USD Coin</b></span>
@@ -677,26 +678,26 @@
 
       <div class="stack">
         <div class="window">
-          <span class="big">≤1.65<span style="font-size:.42em; letter-spacing:0"> 秒</span></span>
-          <span class="lbl">從 <b>停止付款</b> 到 <b>服務真的停下來</b> 的曝險窗口上界;剪線判定不碰鏈。</span>
+          <span class="big">≤1.65<span style="font-size:.42em; letter-spacing:0"> s</span></span>
+          <span class="lbl">Upper bound on the exposure window from <b>stopping payment</b> to <b>service actually stopping</b>; the cut decision never touches the chain.</span>
         </div>
 
         <div class="term">
-          <span class="t-dim">[hook]</span> · session 7f3a · tick #12 · voucher · 押金尚可 1238 格<br>
-          <span class="t-dim">[agent]</span> <span class="t-warn">⚠ 已停止付款,連線保持中 —— 等待 server 斷流</span><br>
-          <span class="t-dim">[watchdog]</span> <span class="t-warn">⚠ session 7f3a · 已付時間用完,寬限 250ms</span><br>
-          <span class="t-dim">[watchdog]</span> <span class="t-cut">✂ session 7f3a · 切斷串流 · 共 12 格 · $0.00048</span><br>
-          <span class="t-dim">[stream]</span> · session 7f3a 已由 server 剪線<br>
-          <span class="t-dim">[agent]</span> <span class="t-cut">✖ 串流已被 server 切斷 · 共 12 個 tick · 總花費 $0.00048</span>
+          <span class="t-dim">[hook]</span> · session 7f3a · tick #12 · voucher · deposit covers 1238 more ticks<br>
+          <span class="t-dim">[agent]</span> <span class="t-warn">⚠ stopped paying, connection held open - waiting for server to cut</span><br>
+          <span class="t-dim">[watchdog]</span> <span class="t-warn">⚠ session 7f3a · paid time used up, grace period 250ms</span><br>
+          <span class="t-dim">[watchdog]</span> <span class="t-cut">✂ session 7f3a · stream cut · 12 ticks total · $0.00048</span><br>
+          <span class="t-dim">[stream]</span> · session 7f3a was cut by the server<br>
+          <span class="t-dim">[agent]</span> <span class="t-cut">✖ stream cut by server · 12 ticks · total spent $0.00048</span>
         </div>
 
         <p class="fine">
-          <strong>第一次 Ctrl-C:</strong>agent 停止付款,但<strong>保持連線</strong>、繼續讀 stream。剩餘額度 + 250ms 寬限 + 一次 100ms sweep 後,
-          server 主動剪線;agent 收到 <code>event: cut</code> 即退還押金、自行結束。第一次不斷線是整個 demo 成立的關鍵 —— <strong>線是 server 剪的</strong>。
+          <strong>First Ctrl-C:</strong> the agent stops paying but <strong>stays connected</strong> and keeps reading the stream. After the remaining credit + the 250ms grace period + one 100ms sweep,
+          the server cuts the line; on receiving <code>event: cut</code>, the agent refunds its deposit and exits on its own. The first Ctrl-C not disconnecting is what makes the whole demo work: <strong>it's the server that cuts the line</strong>.
         </p>
 
         <p class="warn-strip">
-          <b>⚠ 僅用測試網。</b>AVAX 從 Core Wallet console 領,USDC 從 Circle faucet 領,切勿使用真實資產。
+          <b>⚠ Testnet only.</b> Get AVAX from the Core Wallet console and USDC from the Circle faucet. Never use real assets.
         </p>
       </div>
     </div>
@@ -705,15 +706,15 @@
 </div>
 
 <div class="bar">
-  <div class="dots" role="tablist" aria-label="投影片">
-    <button class="dot" type="button" data-go="0" role="tab" aria-current="true">01 定位</button>
-    <button class="dot" type="button" data-go="1" role="tab" aria-current="false">02 原理</button>
-    <button class="dot" type="button" data-go="2" role="tab" aria-current="false">03 參數</button>
+  <div class="dots" role="tablist" aria-label="Slides">
+    <button class="dot" type="button" data-go="0" role="tab" aria-current="true">01 Positioning</button>
+    <button class="dot" type="button" data-go="1" role="tab" aria-current="false">02 How it works</button>
+    <button class="dot" type="button" data-go="2" role="tab" aria-current="false">03 Parameters</button>
   </div>
   <div class="nav">
-    <span class="hint">← → 切換</span>
-    <button type="button" id="prev" aria-label="上一頁">←</button>
-    <button type="button" id="next" aria-label="下一頁">→</button>
+    <span class="hint">← → to navigate</span>
+    <button type="button" id="prev" aria-label="Previous slide">←</button>
+    <button type="button" id="next" aria-label="Next slide">→</button>
   </div>
 </div>
 

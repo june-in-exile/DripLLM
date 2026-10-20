@@ -23,7 +23,7 @@ const ACCEPTED = {
   extra: { receiverAuthorizer: "0xdddddddddddddddddddddddddddddddddddddddd", withdrawDelay: 900 },
 };
 
-/** 組一個帶 PAYMENT-REQUIRED header 的 402,header 裡才是真正的拒絕原因。 */
+/** Build a 402 with a PAYMENT-REQUIRED header; the real rejection reason is in the header. */
 function paymentRequired(error: string): Response {
   const body = Buffer.from(JSON.stringify({ error, accepts: [ACCEPTED] }), "utf8").toString("base64");
   return new Response("{}", { status: 402, headers: { "payment-required": body } });
@@ -36,18 +36,18 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-describe("payTick 的失敗路徑", () => {
-  it("409 轉成 SessionCutError —— 付款已被取消,未扣款", async () => {
-    const wallet = walletReturning(jsonResponse({ error: "已剪除" }, 409));
+describe("payTick failure paths", () => {
+  it("409 becomes SessionCutError -- payment was cancelled, nothing charged", async () => {
+    const wallet = walletReturning(jsonResponse({ error: "cut" }, 409));
     await expect(payTick(wallet, config, "s1")).rejects.toBeInstanceOf(SessionCutError);
   });
 
-  it("402 且訊息指向錢包餘額時,給的是去 faucet 領錢的提示", async () => {
+  it("a 402 pointing at the wallet balance gives a hint to get funds from the faucet", async () => {
     const wallet = walletReturning(new Response("insufficient funds", { status: 402 }));
     await expect(payTick(wallet, config, "s1")).rejects.toThrow(/faucet/);
   });
 
-  it("channel 的 cumulative_exceeds_balance 不可被誤判成錢包沒錢", async () => {
+  it("the channel's cumulative_exceeds_balance is not mistaken for an empty wallet", async () => {
     let calls = 0;
     const forgotten: unknown[] = [];
     const wallet = {
@@ -62,13 +62,13 @@ describe("payTick 的失敗路徑", () => {
       },
     } as unknown as FakeWallet;
 
-    // 第一次丟掉本地紀錄重試,第二次仍失敗才放棄 —— 訊息必須指向押金而非 faucet
-    await expect(payTick(wallet, config, "s1")).rejects.toThrow(/押金不足以支付下一格/);
+    // First drop the local record and retry; give up only if the second try also fails -- the message must point to the deposit, not the faucet
+    await expect(payTick(wallet, config, "s1")).rejects.toThrow(/Deposit cannot cover the next tick/);
     expect(calls).toBe(2);
     expect(forgotten).toEqual([ACCEPTED]);
   });
 
-  it("本地紀錄過期時丟掉重試一次就能成功(賣方端退款後的情境,spec §7)", async () => {
+  it("a stale local record succeeds after one drop-and-retry (after a seller-side refund, spec §7)", async () => {
     let calls = 0;
     const wallet = {
       paidFetch: async () => {
@@ -88,21 +88,21 @@ describe("payTick 的失敗路徑", () => {
     expect(calls).toBe(2);
   });
 
-  it("402 但不是餘額問題時走通用訊息,不誤導使用者去領錢", async () => {
+  it("a 402 that isn't a balance problem gets the generic message, not a misleading faucet hint", async () => {
     const wallet = walletReturning(
       new Response("invalid_batch_settlement_evm_voucher_signature", { status: 402 }),
     );
     await expect(payTick(wallet, config, "s1")).rejects.toThrow(/HTTP 402/);
   });
 
-  it("其他狀態碼一律通用訊息", async () => {
+  it("any other status code gets the generic message", async () => {
     const wallet = walletReturning(new Response("boom", { status: 500 }));
     await expect(payTick(wallet, config, "s1")).rejects.toThrow(/HTTP 500/);
   });
 });
 
-describe("payTick 的 channel 欄位", () => {
-  it("settle extra 形狀不符時不炸,只是沒有 channel 數字可顯示", async () => {
+describe("payTick channel fields", () => {
+  it("a malformed settle extra doesn't blow up; there are just no channel numbers to show", async () => {
     const wallet = walletReturning(jsonResponse({ sessionId: "s1" }, 200), {
       transaction: "0xtx",
       extra: { channelState: "not-an-object" },
@@ -113,7 +113,7 @@ describe("payTick 的 channel 欄位", () => {
     expect(result.signedCeiling).toBeUndefined();
   });
 
-  it("voucher 結算沒有交易雜湊,txHash 為 undefined 而不是空字串", async () => {
+  it("voucher settlement has no tx hash; txHash is undefined, not an empty string", async () => {
     const wallet = {
       paidFetch: async () => jsonResponse({ sessionId: "s2" }, 200),
       httpClient: {
@@ -134,7 +134,7 @@ describe("payTick 的 channel 欄位", () => {
     const result = await payTick(wallet, config, "s2");
     expect(result.txHash).toBeUndefined();
     expect(result.channelBalance).toBe("50000");
-    // 曝險看的是已簽上限,不是已消耗(spec §2.4)
+    // Exposure is the signed cap, not consumed (spec §2.4)
     expect(result.signedCeiling).toBe("80");
   });
 });

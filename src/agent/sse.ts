@@ -18,8 +18,8 @@ function parseFrame(raw: string): SseFrame | null {
 }
 
 /**
- * 回傳一個具狀態的解析函式。chunk 邊界可能切在 frame 中間(含切在 \n\n 之間),
- * 因此未消化的尾段必須留在緩衝區,下次累加後再切分。
+ * Returns a stateful parser. A chunk boundary can fall in the middle of a frame (including between \n\n),
+ * so the unconsumed tail must stay in the buffer to be appended to and split next time.
  */
 export function createSseParser(): (chunk: string) => SseFrame[] {
   let buffer = "";

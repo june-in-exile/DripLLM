@@ -12,7 +12,7 @@ export function renderTick(
   if (extra?.balance != null) {
     extraPart = ` · bal ${formatUsd(BigInt(extra.balance))} / cap ${formatUsd(BigInt(extra.ceiling || "0"))} / sum ${formatUsd(BigInt(extra.cumulative || "0"))}`;
   }
-  logger.info("agent", `tick #${tickCount} · ${formatUsd(spentAtomic)} 累計 · ${txPart}${extraPart}`);
+  logger.info("agent", `tick #${tickCount} · ${formatUsd(spentAtomic)} total · ${txPart}${extraPart}`);
 }
 
 export function renderToken(token: string): void {
@@ -20,7 +20,7 @@ export function renderToken(token: string): void {
 }
 
 export function renderCredit(remainingMs: number, grace: boolean): void {
-  if (grace) logger.warn("agent", `已逾期,寬限期中(${remainingMs}ms)`);
+  if (grace) logger.warn("agent", `overdue, in grace period (${remainingMs}ms)`);
 }
 
 export function renderStopPaying(reason: "manual" | "cap", spentAtomic: bigint): void {
@@ -28,12 +28,12 @@ export function renderStopPaying(reason: "manual" | "cap", spentAtomic: bigint):
   logger.warn(
     "agent",
     reason === "manual"
-      ? "已停止付款,連線保持中 —— 等待 server 斷流"
-      : `已達花費上限 ${formatUsd(spentAtomic)},停止付款 —— 等待 server 斷流`,
+      ? "stopped paying, connection held open - waiting for server to cut"
+      : `spend cap ${formatUsd(spentAtomic)} reached, stopped paying - waiting for server to cut`,
   );
 }
 
 export function renderCut(tickCount: number, spentAtomic: bigint): void {
   process.stdout.write("\n");
-  logger.error("agent", `串流已被 server 切斷 · 共 ${tickCount} 個 tick · 總花費 ${formatUsd(spentAtomic)}`);
+  logger.error("agent", `stream cut by server · ${tickCount} ticks · total spent ${formatUsd(spentAtomic)}`);
 }

@@ -12,11 +12,11 @@ loadEnv();
 const VOUCHER_TICKS = 10;
 
 /**
- * spec §8 第 3 層的鏈上冒煙測試:deposit → 10 格 voucher → claim → refund。
- * 手動執行,不進 CI。只需要 facilitator 先起來(npm run facilitator);
- * server 由本腳本在行程內啟動,才能在正確時點手動觸發 claim。
+ * On-chain smoke test for layer 3 of spec §8: deposit → 10 voucher ticks → claim → refund.
+ * Run manually, not in CI. Only needs the facilitator up first (npm run facilitator);
+ * this script starts the server in-process so it can trigger the claim manually at the right moment.
  *
- * ⚠ 會送出真實的 Fuji 交易並消耗測試網 USDC 與 AVAX。
+ * ⚠ Sends real Fuji transactions and spends testnet USDC and AVAX.
  */
 type Stage = Readonly<{ label: string; tx: string; ms: number }>;
 
@@ -25,7 +25,7 @@ const publicClient = (config: AppConfig) =>
 
 async function reportGas(config: AppConfig, stages: Stage[]): Promise<void> {
   const client = publicClient(config);
-  logger.info("smoke", "—— 各階段 tx 與 gas ——");
+  logger.info("smoke", "-- tx and gas per stage --");
   for (const stage of stages) {
     try {
       const receipt = await client.getTransactionReceipt({ hash: stage.tx as `0x${string}` });
@@ -35,7 +35,7 @@ async function reportGas(config: AppConfig, stages: Stage[]): Promise<void> {
         `${stage.label} · ${stage.ms}ms · gas ${receipt.gasUsed} · ${fee} wei · ${stage.tx}`,
       );
     } catch (e) {
-      logger.warn("smoke", `${stage.label} · ${stage.ms}ms · 無法取得 receipt:${String(e)}`);
+      logger.warn("smoke", `${stage.label} · ${stage.ms}ms · could not fetch receipt: ${String(e)}`);
     }
   }
 }
@@ -50,14 +50,14 @@ async function runVoucherTicks(
     const r = await payTick(wallet, config, crypto.randomUUID());
     const ms = Date.now() - started;
     durations.push(ms);
-    logger.info("smoke", `voucher ${i}/${VOUCHER_TICKS} · ${ms}ms · 上限 ${r.signedCeiling}`);
+    logger.info("smoke", `voucher ${i}/${VOUCHER_TICKS} · ${ms}ms · cap ${r.signedCeiling}`);
   }
   return durations;
 }
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
-  logger.warn("smoke", "本腳本會送出真實 Fuji 交易並消耗測試網 USDC");
+  logger.warn("smoke", "this script sends real Fuji transactions and spends testnet USDC");
 
   const { app, manager, shutdown } = await buildApp(config);
   const server = app.listen(config.serverPort);
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     const wallet = createWallet(config);
     const deposit = await payTick(wallet, config, crypto.randomUUID());
     const depositMs = Date.now() - depositStart;
-    if (!deposit.txHash) throw new Error("第一格沒有 deposit 交易,channel 可能已存在且餘額足夠");
+    if (!deposit.txHash) throw new Error("First tick had no deposit transaction; the channel may already exist with enough balance");
     stages.push({ label: "deposit", tx: deposit.txHash, ms: depositMs });
     logger.info("smoke", `deposit · ${depositMs}ms · tx ${deposit.txHash}`);
 
@@ -80,31 +80,31 @@ async function main(): Promise<void> {
     for (const claim of claims) {
       stages.push({ label: `claim(${claim.vouchers} voucher)`, tx: claim.transaction, ms: claimMs });
     }
-    if (claims.length === 0) logger.warn("smoke", "沒有可請款的 voucher");
+    if (claims.length === 0) logger.warn("smoke", "no vouchers to claim");
 
-    // 用買方端的 cooperative refund(§10.7 的路徑)。賣方端的 manager.refund()
-    // 不會通知買方,client 的本地 channel 紀錄會就地失效。
+    // Use the buyer-side cooperative refund (the §10.7 path). The seller-side manager.refund()
+    // doesn't notify the buyer, which would silently invalidate the client's local channel record.
     const refundStart = Date.now();
     await wallet.refund();
     const refundMs = Date.now() - refundStart;
     logger.info("smoke", `refund · ${refundMs}ms`);
 
     await reportGas(config, stages);
-    logger.info("smoke", `refund(買方端)· ${refundMs}ms`);
-    logger.info("smoke", "—— spec §8 第 0 步的量測值 ——");
-    logger.info("smoke", `1. deposit 上鏈 wall-clock:${depositMs}ms`);
+    logger.info("smoke", `refund (buyer side) · ${refundMs}ms`);
+    logger.info("smoke", "-- spec §8 step 0 measurements --");
+    logger.info("smoke", `1. deposit on-chain wall-clock: ${depositMs}ms`);
     logger.info(
       "smoke",
-      `2. 單格 voucher /tick wall-clock:最小 ${Math.min(...voucherMs)}ms · 最大 ${Math.max(...voucherMs)}ms`,
+      `2. single voucher /tick wall-clock: min ${Math.min(...voucherMs)}ms · max ${Math.max(...voucherMs)}ms`,
     );
-    logger.info("smoke", `3. claim 上鏈 wall-clock:${claimMs}ms(gas 見上表)`);
+    logger.info("smoke", `3. claim on-chain wall-clock: ${claimMs}ms (gas in table above)`);
     logger.info(
       "smoke",
-      `4. viem 對 Fuji 的預設 pollingInterval 為 2000ms,本次設為 ${config.facilitatorPollingMs}ms`,
+      `4. viem's default pollingInterval for Fuji is 2000ms; this run uses ${config.facilitatorPollingMs}ms`,
     );
   } finally {
     server.close();
-    await shutdown().catch((e) => logger.error("smoke", `關閉失敗:${String(e)}`));
+    await shutdown().catch((e) => logger.error("smoke", `shutdown failed: ${String(e)}`));
   }
 }
 

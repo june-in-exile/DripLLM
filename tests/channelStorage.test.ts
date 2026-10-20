@@ -35,7 +35,7 @@ function storedChannel(channelId: `0x${string}`): Channel {
 }
 
 describe("createServerChannelStorage", () => {
-  it("新 storage instance 可復原先前寫入的最新 voucher", async () => {
+  it("a new storage instance can restore the latest voucher written earlier", async () => {
     const root = await mkdtemp(join(tmpdir(), "dripllm-channel-"));
     roots.push(root);
     const id = `0x${"a".repeat(64)}` as const;

@@ -45,8 +45,8 @@ afterAll(async () => {
   await fake.close();
 });
 
-describe("完整流程:付款 → 串流 → 停付 → 剪線", () => {
-  it("付款後 session 建立,SSE 開得起來並收到 token 與 credit", async () => {
+describe("full flow: pay → stream → stop paying → cut", () => {
+  it("after payment the session is created, and SSE opens and receives token and credit", async () => {
     const wallet = createWallet(config);
     const id = crypto.randomUUID();
     const paid = await payTick(wallet, config, id);
@@ -70,10 +70,10 @@ describe("完整流程:付款 → 串流 → 停付 → 剪線", () => {
 
     expect(seen.has("token")).toBe(true);
     expect(seen.has("credit")).toBe(true);
-    expect(seen.has("cut")).toBe(true); // 未補款,寬限期後被剪
+    expect(seen.has("cut")).toBe(true); // no top-up, so cut after the grace period
   }, 10_000);
 
-  it("同一 sessionId 的第二條 SSE 被拒(409)", async () => {
+  it("a second SSE for the same sessionId is rejected (409)", async () => {
     const wallet = createWallet(config);
     const id = crypto.randomUUID();
     const paid = await payTick(wallet, config, id);
@@ -89,21 +89,21 @@ describe("完整流程:付款 → 串流 → 停付 → 剪線", () => {
     await first.body?.cancel();
   }, 10_000);
 
-  it("被剪除的 sessionId 再次付款回 409,且結算被取消(未扣款)", async () => {
+  it("paying again with a cut sessionId returns 409 and the settlement is cancelled (no charge)", async () => {
     const wallet = createWallet(config);
     const id = crypto.randomUUID();
     await payTick(wallet, config, id);
 
-    // 等到被剪(credit 300ms + grace 120ms + sweep 25ms)
+    // wait until cut (credit 300ms + grace 120ms + sweep 25ms)
     await new Promise((r) => setTimeout(r, 600));
 
     const before = fake.settleCount();
     await expect(payTick(wallet, config, id)).rejects.toThrow(SessionCutError);
-    // handler 回 409 → middleware 取消結算 → settle 次數不增加
+    // handler returns 409 → middleware cancels settlement → settle count doesn't increase
     expect(fake.settleCount()).toBe(before);
   }, 10_000);
 
-  it("cut 事件帶正確的 tickCount 與 spentAtomic,不含 undefined", async () => {
+  it("the cut event carries correct tickCount and spentAtomic, with no undefined", async () => {
     const wallet = createWallet(config);
     const id = crypto.randomUUID();
     const paid = await payTick(wallet, config, id);

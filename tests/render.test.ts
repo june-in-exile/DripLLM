@@ -28,14 +28,14 @@ afterEach(() => {
 });
 
 describe("renderTick", () => {
-  it("有交易雜湊時顯示 tx,沒有時標成 voucher", () => {
+  it("shows tx when there is a tx hash, otherwise labels it voucher", () => {
     renderTick(1, "0xabcdef0123456789", 40n);
     renderTick(2, undefined, 80n);
     expect(out.join("")).toContain("tx 0xabcdef0123");
     expect(out.join("")).toContain("voucher");
   });
 
-  it("帶 channel 狀態時同時顯示押金餘額、已簽上限與累計消耗(spec §10.4)", () => {
+  it("with channel state, shows deposit, signed cap and consumed together (spec §10.4)", () => {
     renderTick(3, undefined, 120n, { balance: "50000", ceiling: "120", cumulative: "120" });
     const line = out.join("");
     expect(line).toContain("bal");
@@ -43,43 +43,43 @@ describe("renderTick", () => {
     expect(line).toContain("sum");
   });
 
-  it("沒有 channel 狀態時不輸出殘缺欄位", () => {
+  it("without channel state, emits no partial fields", () => {
     renderTick(1, undefined, 40n, {});
     expect(out.join("")).not.toContain("bal");
   });
 });
 
 describe("renderToken", () => {
-  it("原樣寫出,不加換行", () => {
+  it("writes verbatim, no newline added", () => {
     renderToken("hello");
     expect(out.join("")).toBe("hello");
   });
 });
 
 describe("renderCredit", () => {
-  it("只在寬限期內出聲,平時保持安靜以免蓋掉 token 串流", () => {
+  it("speaks only during the grace period; stays quiet otherwise so it doesn't drown the token stream", () => {
     renderCredit(500, false);
     expect(out.join("") + err.join("")).toBe("");
 
     renderCredit(-20, true);
-    expect(out.join("")).toContain("寬限期");
+    expect(out.join("")).toContain("grace period");
   });
 });
 
 describe("renderStopPaying", () => {
-  it("手動停付與撞上花費上限給的是不同訊息", () => {
+  it("manual stop and hitting the spend cap give different messages", () => {
     renderStopPaying("manual", 120n);
     renderStopPaying("cap", 50000n);
     const text = out.join("");
-    expect(text).toContain("已停止付款");
-    expect(text).toContain("花費上限");
+    expect(text).toContain("stopped paying, connection held open");
+    expect(text).toContain("spend cap");
   });
 });
 
 describe("renderCut", () => {
-  it("剪線摘要走 stderr,含 tick 數與總花費", () => {
+  it("cut summary goes to stderr with tick count and total spent", () => {
     renderCut(12, 480n);
     expect(err.join("")).toContain("12");
-    expect(err.join("")).toContain("串流已被 server 切斷");
+    expect(err.join("")).toContain("stream cut by server");
   });
 });

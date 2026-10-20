@@ -8,7 +8,7 @@ import { buildApp } from "../src/server/routes.js";
 import { createWallet } from "../src/agent/wallet.js";
 import { payTick } from "../src/agent/heartbeat.js";
 
-/** 一格 300ms、寬限 120ms、掃描 25ms —— 整個「付款 → 剪線」週期 1 秒內跑完。 */
+/** 300ms per tick, 120ms grace, 25ms sweep — the whole "pay → cut" cycle finishes within 1 second. */
 const FAST = {
   CREDIT_PER_TICK_MS: "300",
   TOPUP_THRESHOLD_MS: "100",
@@ -65,7 +65,7 @@ afterAll(async () => {
   await rm(storageDir, { recursive: true, force: true });
 });
 
-/** 從未付款的 402 取回 server 增補過的 requirements(含 receiverAuthorizer 與 withdrawDelay)。 */
+/** Fetches the server-augmented requirements (with receiverAuthorizer and withdrawDelay) from an unpaid 402. */
 async function fetchAccepted(): Promise<Record<string, unknown>> {
   const res = await fetch(`${config.serverBaseUrl}/tick`, {
     method: "POST",
@@ -73,16 +73,16 @@ async function fetchAccepted(): Promise<Record<string, unknown>> {
   });
   expect(res.status).toBe(402);
   const encoded = res.headers.get("payment-required");
-  if (!encoded) throw new Error("402 缺少 PAYMENT-REQUIRED header");
+  if (!encoded) throw new Error("402 missing PAYMENT-REQUIRED header");
   const decoded = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
     accepts: Record<string, unknown>[];
   };
   const accepted = decoded.accepts[0];
-  if (!accepted) throw new Error("402 沒有任何 accepts");
+  if (!accepted) throw new Error("402 has no accepts");
   return accepted;
 }
 
-/** 用真實 client scheme 簽一張當下該簽的 voucher,再交給呼叫端動手腳。 */
+/** Signs the voucher due right now with the real client scheme, then hands it to the caller to tamper with. */
 async function buildVoucher(accepted: Record<string, unknown>): Promise<VoucherPayload> {
   const built = await wallet.scheme.createPaymentPayload(2, accepted as never, undefined);
   return built.payload as VoucherPayload;
@@ -108,7 +108,7 @@ async function postPayload(
   });
 }
 
-/** 402 的拒絕原因放在 PAYMENT-REQUIRED header,不在 body。 */
+/** A 402's rejection reason is in the PAYMENT-REQUIRED header, not the body. */
 function rejectionReason(res: Response): string {
   const encoded = res.headers.get("payment-required");
   if (!encoded) return "";
@@ -118,7 +118,7 @@ function rejectionReason(res: Response): string {
   return decoded.error ?? "";
 }
 
-/** 被拒絕的一格不得留下任何 session —— 沒有 session 就送不出 token(spec §7)。 */
+/** A rejected tick must leave no session behind — no session, no tokens (spec §7). */
 async function expectNoSession(sessionId: string): Promise<void> {
   const stream = await fetch(`${config.serverBaseUrl}/stream`, {
     headers: { "X-Drip-Session": sessionId },
@@ -142,15 +142,15 @@ function parseSse(text: string): Array<{ event: string; data: string }> {
     });
 }
 
-describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitator)", () => {
-  it("押金足夠時每格都延長 paidUntil,且只有第一格上鏈", async () => {
+describe("batch-settlement billing layer (real voucher signatures + bookkeeping fake facilitator)", () => {
+  it("extends paidUntil on every tick while the deposit suffices, and only the first tick goes on-chain", async () => {
     const sessionId = crypto.randomUUID();
     const first = await payTick(wallet, config, sessionId);
     expect(first.txHash).toBeTruthy();
 
     const second = await payTick(wallet, config, sessionId);
     const third = await payTick(wallet, config, sessionId);
-    // 第二、三格是鏈下 voucher:沒有交易,但上限每格剛好加一格(spec §2.4)
+    // The second and third ticks are off-chain vouchers: no transaction, but the cap rises by exactly one tick each time (spec §2.4)
     expect(second.txHash).toBeFalsy();
     expect(third.txHash).toBeFalsy();
     expect(BigInt(third.signedCeiling!) - BigInt(second.signedCeiling!)).toBe(
@@ -161,7 +161,7 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     expect(health.sessions).toBeGreaterThanOrEqual(1);
   });
 
-  it("停付後在 CREDIT + GRACE + SWEEP 的上界內收到 cut", async () => {
+  it("receives cut within the CREDIT + GRACE + SWEEP bound after payment stops", async () => {
     const sessionId = crypto.randomUUID();
     await payTick(wallet, config, sessionId);
 
@@ -179,15 +179,15 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     expect(cut).toHaveLength(1);
     expect(JSON.parse(cut[0]!.data).reason).toBe("payment_lapsed");
 
-    // 理論上界 = 剩餘額度 + 寬限 + 一個 sweep 週期。留 400ms 給排程抖動。
+    // Theoretical bound = remaining credit + grace + one sweep cycle. 400ms of slack for scheduling jitter.
     const bound = config.creditPerTickMs + config.graceMs + config.watchdogSweepMs + 400;
     expect(elapsed).toBeLessThan(bound);
   });
 
-  it("剛補款就停付是最壞情況:剩餘額度超過一格,上界要再加 TOPUP_THRESHOLD(spec §12.9)", async () => {
+  it("stopping right after a top-up is the worst case: remaining credit exceeds one tick, so the bound adds TOPUP_THRESHOLD (spec §12.9)", async () => {
     const sessionId = crypto.randomUUID();
     await payTick(wallet, config, sessionId);
-    // 等到剩餘額度接近補款門檻再補下一格 —— 補完的剩餘 = 一格 + 補款當下的剩餘,超過一格。
+    // Wait until remaining credit nears the top-up threshold before paying the next tick — remaining after top-up = one tick + what was left at top-up, more than one tick.
     await new Promise((r) => setTimeout(r, config.creditPerTickMs - config.topupThresholdMs));
     await payTick(wallet, config, sessionId);
 
@@ -199,16 +199,16 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     const elapsed = Date.now() - started;
 
     expect(frames.filter((f) => f.event === "cut")).toHaveLength(1);
-    // 剪線時間超過一格,證明「剩餘 0～1 格」的舊假設不成立。
+    // Time to cut exceeds one tick, disproving the old "0-1 ticks remaining" assumption.
     expect(elapsed).toBeGreaterThan(config.creditPerTickMs);
     const bound =
       config.creditPerTickMs + config.topupThresholdMs + config.graceMs + config.watchdogSweepMs + 400;
     expect(elapsed).toBeLessThan(bound);
   });
 
-  it("押金耗盡且買方不再補押金時回 402 且不建立 session", async () => {
-    // 專屬的買方金鑰 = 專屬的 channelId,才不會動到其他案例的押金。
-    // 押金 120 atomic = 3 格;第 4 格的上限就會超過餘額,必須被賣方擋下。
+  it("returns 402 and creates no session when the deposit is exhausted and the buyer doesn't top it up", async () => {
+    // A dedicated buyer key = a dedicated channelId, so other cases' deposits are untouched.
+    // A 120 atomic deposit = 3 ticks; the 4th tick's cap exceeds the balance and must be blocked by the seller.
     const poorConfig = baseConfig(config.serverPort, storageDir, "0x" + "b".repeat(64));
     const poor = createWallet(poorConfig, {
       depositStrategy: ({ currentBalance }) =>
@@ -235,10 +235,10 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     await expectNoSession(lastSessionId);
   });
 
-  it("上限被竄改為與累計基準不符時拒絕該格,不建立 session", async () => {
+  it("rejects the tick and creates no session when the cap is tampered to mismatch the cumulative base", async () => {
     const accepted = await fetchAccepted();
     const voucher = await buildVoucher(accepted);
-    // server 要求上限剛好等於「已消耗 + 一格」,多簽一格也不行(spec §2.4)
+    // The server requires the cap to be exactly "consumed + one tick"; signing one extra tick is rejected too (spec §2.4)
     const inflated = BigInt(voucher.voucher.maxClaimableAmount) + config.pricePerTickAtomic;
     const signature = await signVoucher(
       wallet.signer as never,
@@ -258,10 +258,10 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     await expectNoSession(sessionId);
   });
 
-  it("上限未遞增(重放上一張 voucher)時拒絕該格", async () => {
+  it("rejects the tick when the cap doesn't increase (replaying the previous voucher)", async () => {
     const accepted = await fetchAccepted();
     const voucher = await buildVoucher(accepted);
-    // 退回一格 = 與 server 已記的 chargedCumulativeAmount 相同,等於沒有加新額度
+    // One tick back = equal to the chargedCumulativeAmount the server already recorded, i.e. no new credit added
     const stale = BigInt(voucher.voucher.maxClaimableAmount) - config.pricePerTickAtomic;
     const signature = await signVoucher(
       wallet.signer as never,
@@ -281,7 +281,7 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     await expectNoSession(sessionId);
   });
 
-  it("簽章無效時拒絕該格", async () => {
+  it("rejects the tick when the signature is invalid", async () => {
     const accepted = await fetchAccepted();
     const voucher = await buildVoucher(accepted);
     const original = voucher.voucher.signature;
@@ -299,7 +299,7 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
     await expectNoSession(sessionId);
   });
 
-  it("server 重啟後 channel 從 storage 復原,續付不需要重新存押金", async () => {
+  it("after a server restart the channel is restored from storage, and paying on needs no new deposit", async () => {
     const restartPort = config.serverPort + 500;
     const restarted = await buildApp(baseConfig(restartPort, storageDir));
     const restartedServer = await new Promise<Server>((resolve) => {
@@ -311,7 +311,7 @@ describe("batch-settlement 收費層(真實 voucher 簽章 + 記帳假 facilitat
       const before = fake.settleCount();
       const result = await payTick(wallet, restartedConfig, crypto.randomUUID());
 
-      // 復原成功的證據:沒有新的 deposit 交易,facilitator 也沒被呼叫 settle
+      // Evidence of restoration: no new deposit transaction, and the facilitator was never asked to settle
       expect(result.txHash).toBeFalsy();
       expect(fake.settleCount()).toBe(before);
     } finally {

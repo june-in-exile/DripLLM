@@ -8,8 +8,8 @@ export type Registry = Readonly<{
 }>;
 
 /**
- * 可變性被侷限在這裡的兩格。內容物本身仍是不可變資料。
- * 所有 handler 一律經 getStore() 現讀,不得閉包捕獲 store 本身(spec §6.3.1)。
+ * Mutability is confined to these two slots. The contents themselves are still immutable data.
+ * Every handler reads fresh via getStore() and must never capture the store itself in a closure (spec §6.3.1).
  */
 export function createRegistry(initial: SessionStore = new Map()): Registry {
   let store = initial;
@@ -21,12 +21,12 @@ export function createRegistry(initial: SessionStore = new Map()): Registry {
       store = next;
     },
     /**
-     * 標記某個 session 已被切斷。同時掃掉 cutAt 中已過期(nowMs - markedAt > ttlMs)的舊項目,
-     * 確保 tombstone 集合的成長有界。清理是刻意設計,不是副作用。
+     * Marks a session as cut. Also sweeps expired old entries out of cutAt (nowMs - markedAt > ttlMs),
+     * keeping the tombstone set's growth bounded. The cleanup is deliberate, not a side effect.
      */
     markCut: (id: string, nowMs: number, ttlMs: number) => {
       cutAt.set(id, nowMs);
-      // 掃掉已過期的舊 tombstone
+      // sweep out expired old tombstones
       for (const [key, t] of cutAt.entries()) {
         if (nowMs - t > ttlMs) {
           cutAt.delete(key);
@@ -34,7 +34,7 @@ export function createRegistry(initial: SessionStore = new Map()): Registry {
       }
     },
     /**
-     * 檢查某個 id 是否在 TTL 內被視為已剪除。純讀操作,無副作用。
+     * Checks whether an id counts as cut within the TTL. Pure read, no side effects.
      */
     isCut: (id: string, nowMs: number, ttlMs: number) => {
       const t = cutAt.get(id);

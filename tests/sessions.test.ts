@@ -14,8 +14,8 @@ function seed(nowMs = 1000) {
   return r;
 }
 
-describe("upsertSession —— 建立", () => {
-  it("建立新 session,paidUntil = now + credit", () => {
+describe("upsertSession — create", () => {
+  it("creates a new session, paidUntil = now + credit", () => {
     const r = seed(1000);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -26,14 +26,14 @@ describe("upsertSession —— 建立", () => {
     expect(r.session.lastTxHash).toBe("0xtx1");
   });
 
-  it("不修改傳入的 store", () => {
+  it("doesn't mutate the passed-in store", () => {
     seed();
     expect(empty.size).toBe(0);
   });
 });
 
-describe("upsertSession —— 延長", () => {
-  it("餘額未用盡時,自 paidUntil 往後累加,不是自 now", () => {
+describe("upsertSession — extend", () => {
+  it("accumulates from paidUntil, not from now, while credit remains", () => {
     const first = seed(1000);
     if (!first.ok) return;
     const second = upsertSession(first.store, "s1", PAYER, 3000, 5000, 1000n, "0xtx2");
@@ -45,7 +45,7 @@ describe("upsertSession —— 延長", () => {
     expect(second.session.lastTxHash).toBe("0xtx2");
   });
 
-  it("餘額已用盡時,自 now 起算", () => {
+  it("counts from now once credit is used up", () => {
     const first = seed(1000);
     if (!first.ok) return;
     const second = upsertSession(first.store, "s1", PAYER, 9000, 5000, 1000n, "0xtx2");
@@ -53,7 +53,7 @@ describe("upsertSession —— 延長", () => {
     expect(second.session.paidUntilMs).toBe(14000); // max(9000, 6000) + 5000
   });
 
-  it("payer 不符時拒絕,且不改動 store", () => {
+  it("rejects on payer mismatch without changing the store", () => {
     const first = seed(1000);
     if (!first.ok) return;
     const second = upsertSession(first.store, "s1", OTHER, 3000, 5000, 1000n, "0xtx2");
@@ -65,13 +65,13 @@ describe("upsertSession —— 延長", () => {
 });
 
 describe("remainingMs", () => {
-  it("餘額充足時為正", () => {
+  it("is positive when credit is ample", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(remainingMs(r.session, 3000)).toBe(3000);
   });
 
-  it("逾期時為負,不 clamp 在 0", () => {
+  it("is negative when overdue, not clamped at 0", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(remainingMs(r.session, 7500)).toBe(-1500);
@@ -79,33 +79,33 @@ describe("remainingMs", () => {
 });
 
 describe("inGrace", () => {
-  it("餘額未用盡時不算寬限期", () => {
+  it("isn't in the grace period while credit remains", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(inGrace(r.session, 5000, 2000)).toBe(false);
   });
 
-  it("逾期但仍在寬限內為 true", () => {
+  it("is true when overdue but still within grace", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(inGrace(r.session, 7000, 2000)).toBe(true);
   });
 
-  it("超過寬限後為 false", () => {
+  it("is false past the grace period", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(inGrace(r.session, 8500, 2000)).toBe(false);
   });
 });
 
-describe("expiredSessions —— 邊界", () => {
-  it("剛好在寬限期最後 1ms 不算逾期", () => {
+describe("expiredSessions — boundaries", () => {
+  it("isn't expired in the last 1ms of the grace period", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(expiredSessions(r.store, 8000, 2000)).toHaveLength(0);
   });
 
-  it("超過寬限 1ms 即算逾期", () => {
+  it("is expired 1ms past grace", () => {
     const r = seed(1000);
     if (!r.ok) return;
     expect(expiredSessions(r.store, 8001, 2000)).toHaveLength(1);
@@ -113,7 +113,7 @@ describe("expiredSessions —— 邊界", () => {
 });
 
 describe("removeSession", () => {
-  it("回傳新 store,原 store 不變", () => {
+  it("returns a new store and leaves the original unchanged", () => {
     const r = seed();
     if (!r.ok) return;
     const next = removeSession(r.store, "s1");
@@ -121,7 +121,7 @@ describe("removeSession", () => {
     expect(r.store.has("s1")).toBe(true);
   });
 
-  it("移除不存在的 id 不拋錯", () => {
+  it("doesn't throw when removing a nonexistent id", () => {
     expect(() => removeSession(empty, "nope")).not.toThrow();
   });
 });

@@ -68,8 +68,8 @@ describe("wallet", () => {
   });
 });
 
-describe("client signer 的能力", () => {
-  it("必須具備 readContract —— 沒有它,退款後與鏈上失步就永遠卡在 402(spec §7)", () => {
+describe("client signer capabilities", () => {
+  it("must have readContract -- without it, drifting from the chain after a refund leaves the buyer stuck on 402 forever (spec §7)", () => {
     const wallet = createWallet(config);
     expect(typeof wallet.signer.readContract).toBe("function");
     expect(wallet.signer.address).toBe(wallet.account.address);

@@ -1,6 +1,6 @@
 export type Session = Readonly<{
   id: string;
-  /** 取自 authorization.from,見 spec §2.6。後續 tick 須相符。 */
+  /** Taken from authorization.from, see spec §2.6. Subsequent ticks must match. */
   payer: string;
   paidUntilMs: number;
   spentAtomic: bigint;
@@ -41,7 +41,7 @@ export function upsertSession(
   return { ok: true, store: next, session };
 }
 
-/** 可為負值 —— agent 需藉此區分「將盡」與「已逾期」,見 spec §2.2.1。 */
+/** May be negative — the agent needs this to tell "running low" from "overdue", see spec §2.2.1. */
 export function remainingMs(session: Session, nowMs: number): number {
   return session.paidUntilMs - nowMs;
 }

@@ -14,9 +14,9 @@ import { logger } from "../shared/logger.js";
 
 export type BuiltApp = Readonly<{
   app: Express;
-  /** 賣方請款排程器。常態由 startClaimJob 驅動,手動冒煙測試需要即時觸發一次。 */
+  /** Seller's claim scheduler. Normally driven by startClaimJob; manual smoke tests need to trigger it once on demand. */
   manager: BatchSettlementChannelManager;
-  /** 收工時把尚未 claim 的 voucher 沖出去,避免那段收入卡在 storage 裡(spec §9)。 */
+  /** On shutdown, flush unclaimed vouchers so that revenue doesn't get stuck in storage (spec §9). */
   shutdown(): Promise<void>;
 }>;
 
@@ -52,16 +52,16 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   app.post("/tick", (req: Request, res: Response) => {
     const sessionId = req.header("X-Drip-Session");
     if (!sessionId) {
-      res.status(400).json({ error: "缺少 X-Drip-Session header" });
+      res.status(400).json({ error: "missing X-Drip-Session header" });
       return;
     }
 
-    // tombstone 檢查必須在這裡,不能放進 hook。
-    // middleware 順序是 verify → handler → settle,且 statusCode >= 400 會觸發
-    // cancellationDispatcher.cancel(),因此在此回 409 時付款尚未上鏈,agent 不會被扣款。
-    // 若改到 hook 處理,新 id 送不出去 —— body 在 res.end() 時已定案(spec §2.2.1)。
+    // The tombstone check must live here, not in the hook.
+    // Middleware order is verify → handler → settle, and statusCode >= 400 triggers
+    // cancellationDispatcher.cancel(), so when we return 409 here the payment hasn't gone on-chain and the agent isn't charged.
+    // If this moved into the hook, the new id couldn't be sent — the body is finalized at res.end() (spec §2.2.1).
     if (registry.isCut(sessionId, Date.now(), config.tombstoneTtlMs)) {
-      res.status(409).json({ error: "此 sessionId 已被剪除,請改用新的 sessionId" });
+      res.status(409).json({ error: "this sessionId has been cut, use a new sessionId" });
       return;
     }
 
@@ -69,20 +69,20 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
   });
 
   app.get("/stream", (req: Request, res: Response) => {
-    // sessionId 視為 bearer token(spec §2.2),經 header 傳輸 ——
-    // 放 query string 會漏進 proxy/access logs,助長劫持。
+    // sessionId is treated as a bearer token (spec §2.2) and carried in a header —
+    // putting it in the query string would leak it into proxy/access logs and invite hijacking.
     const sessionId = req.header("X-Drip-Session");
     if (!sessionId) {
-      res.status(400).json({ error: "缺少 X-Drip-Session header" });
+      res.status(400).json({ error: "missing X-Drip-Session header" });
       return;
     }
     const session = registry.getStore().get(sessionId);
     if (!session) {
-      res.status(404).json({ error: "session 不存在或已過期,請先付款" });
+      res.status(404).json({ error: "session not found or expired, pay first" });
       return;
     }
     if (!hub.attach(sessionId, res)) {
-      res.status(409).json({ error: "此 session 已有一條串流連線" });
+      res.status(409).json({ error: "this session already has a stream connection" });
       return;
     }
 
@@ -93,7 +93,7 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
     });
     res.flushHeaders();
 
-    // 迭代器只建立一次 —— 每次 tick 重建會永遠停在第一個詞元。
+    // The iterator is created only once — rebuilding it every tick would stay stuck on the first token forever.
     const iter = tokens.open()[Symbol.asyncIterator]();
     const tokenTimer = setInterval(() => {
       void iter.next().then((next) => {
@@ -116,10 +116,10 @@ export async function buildApp(config: AppConfig): Promise<BuiltApp> {
     res.on("close", () => {
       clearInterval(tokenTimer);
       clearInterval(creditTimer);
-      // 現讀 store,不可捕獲(spec §6.3.1)。
-      // 仍在帳本中 = agent 自己斷的;已不在 = watchdog 剪的。
+      // Read the store fresh, never capture it (spec §6.3.1).
+      // Still in the ledger = the agent disconnected itself; gone = the watchdog cut it.
       const cutByServer = !registry.getStore().has(sessionId);
-      logger.info("stream", cutByServer ? `session ${sessionId.slice(0, 4)} 已由 server 剪線` : `session ${sessionId.slice(0, 4)} 由 agent 主動斷線`);
+      logger.info("stream", cutByServer ? `session ${sessionId.slice(0, 4)} was cut by the server` : `session ${sessionId.slice(0, 4)} was disconnected by the agent`);
       hub.detach(sessionId);
     });
   });

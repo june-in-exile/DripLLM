@@ -2,8 +2,8 @@ services:
   facilitator:
     image: node:22-alpine
     working_dir: /app
-    # 容器內自己裝相依套件:host 的 node_modules(macOS)含 native binding 時
-    # 直接掛進 alpine 會壞,所以用匿名 volume 把它蓋掉。
+    # Install dependencies inside the container: if the host's node_modules (macOS) contains native bindings,
+    # mounting it straight into alpine breaks, so an anonymous volume masks it.
     command: sh -c "npm ci && npm run facilitator"
     ports:
       - "8080:8080"

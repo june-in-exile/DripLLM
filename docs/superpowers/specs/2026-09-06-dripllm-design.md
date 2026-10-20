@@ -1,106 +1,106 @@
-# DripLLM 設計文件
+# DripLLM Design Document
 
-**日期:** 2026-09-06
-**狀態:** 已定案,實作進行中
-**範圍:** 概念驗證(PoC)
+**Date:** 2026-09-06
+**Status:** Finalized, implementation in progress
+**Scope:** Proof of concept (PoC)
 
 ---
 
-## 1. 目標
+## 1. Goal
 
-**讓沒有計費基礎設施的小型推論供應商,能對機器客戶按秒收費,而雙方都不需要對彼此授信。**
+**Let small inference providers with no billing infrastructure charge machine customers by the second, without either side having to extend credit to the other.**
 
-用一個可跑的最小系統示範:買方 agent 掛在一條推論串流上持續付費,一旦停付,賣方 server 主動切斷連線。
+Demonstrate it with a minimal runnable system: a buyer agent hangs on an inference stream and keeps paying; the moment it stops paying, the seller server actively cuts the connection.
 
-### 1.1 要解決的問題
+### 1.1 The problem being solved
 
-小型 LLM 供應商想收費,得先自己建一整套東西:帳號系統、金流串接、發票、授信與催收、退款爭議、防詐。**這套成本與客戶數無關,是固定門檻** —— 大公司攤得掉,一個人跑自架模型的攤不掉。
+A small LLM provider that wants to charge has to build a whole stack first: an account system, payment integration, invoicing, credit and collections, refund disputes, fraud prevention. **That cost does not scale with the number of customers; it is a fixed barrier** — a large company can amortize it, one person running a self-hosted model cannot.
 
-DripLLM 這條路,供應商只需要一個收款地址加一段 middleware。沒有帳號、沒有發票、沒有授信風險、沒有 chargeback,而且第一天就是全球的。
+On the DripLLM path, the provider only needs a receiving address plus a piece of middleware. No accounts, no invoices, no credit risk, no chargebacks, and it is global from day one.
 
-### 1.2 為什麼是「按秒」而不是「按 token」
+### 1.2 Why "per second" and not "per token"
 
-按 token 計費是大公司在抽象掉硬體之後的定價方式。**小型自架供應商的真實成本是 GPU 被佔用的時間** —— 一個人跑一張卡,他的成本就是秒數。按時間計費對這個受眾比按 token 更貼合成本結構,不是為了 demo 方便而做的簡化。
+Per-token billing is how large companies price once they have abstracted the hardware away. **The real cost for a small self-hosted provider is the time the GPU is occupied** — one person running one card, their cost is seconds. Billing by time fits this audience's cost structure better than billing by token; it is not a simplification made for demo convenience.
 
-### 1.3 為什麼不能只用原生的 per-request x402
+### 1.3 Why native per-request x402 alone is not enough
 
-一般的 request/response API,per-request 付款本來就解決了問題:沒付錢就 402,拿不到回應,曝險等於零。**那種場景本專案沒有加分。**
+For an ordinary request/response API, per-request payment already solves the problem: no payment means a 402, no response, and zero exposure. **This project adds nothing in that scenario.**
 
-沒有現成答案的是**串流** —— 一段跑好幾分鐘的推論,「一次請求」不是自然的計費單位。此時只剩兩個爛選擇:
+What has no ready-made answer is **streaming** — for an inference that runs several minutes, "one request" is not a natural billing unit. That leaves only two bad options:
 
-| 做法 | 誰承擔風險 |
+| Approach | Who bears the risk |
 | --- | --- |
-| 整段預收 | 買方承擔對手方風險(付了錢對方跑掉) |
-| 先給後收 | 賣方承擔授信風險(送完了對方不付) |
+| Charge the whole thing upfront | The buyer bears counterparty risk (pays, and the other side runs off) |
+| Deliver first, charge later | The seller bears credit risk (delivers everything, and the other side does not pay) |
 
-DripLLM 的答案是第三條:**把時間切成 `CREDIT_PER_TICK_MS` 一格,任一方對另一方的曝險都不超過一格。**
+DripLLM's answer is a third option: **slice time into ticks of `CREDIT_PER_TICK_MS`, so neither side's exposure to the other ever exceeds one tick.**
 
-### 1.4 這個 demo 證明的不是「能不能斷」
+### 1.4 What this demo proves is not "can it be cut"
 
-「沒錢就沒服務」是所有計費模型的共同點,不值得做 demo。有意義的量只有一個:**從停止付款,到服務真的停下來,中間的曝險窗口有多大。**
+"No money, no service" is common to every billing model and not worth a demo. Only one quantity is meaningful: **from the moment payment stops to the moment service actually stops, how large is the exposure window in between.**
 
-以 session 預先授權為基礎的 agent 錢包(如 Kite Agent Passport)走的是相反的取捨 —— 先核准一筆預算與時限,agent 在框內自主花費,換取「不必每次再問」的便利;代價是在撤銷之前,整筆預算的曝險是實際存在的。
+Agent wallets built on session pre-authorization (such as Kite Agent Passport) make the opposite trade-off — approve a budget and a time limit up front, and the agent spends autonomously within that box, gaining the convenience of "no need to ask every time"; the cost is that until revocation, exposure to the entire budget is real.
 
-兩者不衝突,解的是不同層:**session 授權管的是「買方能不能花」,DripLLM 管的是「賣方在對方停付時能多快收手」。**
+The two do not conflict; they solve different layers: **session authorization governs "whether the buyer may spend"; DripLLM governs "how fast the seller can pull back when the other side stops paying."**
 
-### 1.5 一個硬邊界:機器客戶,不是人類客戶
+### 1.5 A hard boundary: machine customers, not human customers
 
-門檻並未消失,而是**換邊**了:供應商不必再建計費系統,但**每個客戶都得有一個裝了 USDC 的錢包**。
+The barrier does not disappear; it **switches sides**: the provider no longer has to build a billing system, but **every customer must have a wallet holding USDC**.
 
-對人類客戶這是死穴 —— 沒有人為了用一個小模型去開錢包買 USDC。對 agent 客戶則不是,agent 本來就是被程式佈建出來的,發個錢包給它是一行程式。
+For human customers this is fatal — nobody opens a wallet and buys USDC just to use a small model. For agent customers it is not: agents are provisioned by code in the first place, and handing one a wallet is one line of code.
 
-這就是為什麼本專案落在 agent payment 這個題目底下,而不是一般的 SaaS 計費。
+That is why this project sits under the topic of agent payments rather than general SaaS billing.
 
-### 1.6 非目標
+### 1.6 Non-goals
 
-- 不做真實 LLM 推論(PoC 用罐頭 token 串流,介面可抽換)
-- 不做多買方、多 session 的規模化
-- 不做前端網頁,demo 是兩個並排的終端
-- 不上主網,不碰真實資產
-- 不自己寫智能合約,鏈上驗證與結算交給 facilitator
+- No real LLM inference (the PoC uses a canned token stream; the interface is swappable)
+- No scaling to multiple buyers or multiple sessions
+- No web frontend; the demo is two terminals side by side
+- No mainnet, no real assets
+- No smart contracts of our own; on-chain verification and settlement are left to the facilitator
 
 ---
 
-## 2. 核心設計決策
+## 2. Core design decisions
 
-### 2.1 斷流必須由 server 執行(關鍵決策)
+### 2.1 The cut must be executed by the server (key decision)
 
-考慮過兩種形狀:
+Two shapes were considered:
 
-| 方案 | 斷流的樣子 | 問題 |
+| Option | What the cut looks like | Problem |
 | --- | --- | --- |
-| 每 tick 一個獨立 request | agent 自己 break 迴圈 | 畫面上分辨不出「server 強制」與「agent 自願停止」,server 從頭到尾沒行使任何權力 |
-| **SSE 長連線 + 付款心跳(採用)** | server 主動 `res.end()` | agent 還連著、還想要,但線被剪了 —— 強制力可見 |
+| One independent request per tick | The agent breaks out of its own loop | On screen you cannot tell "server enforcement" from "agent voluntarily stopping"; the server never exercises any power at all |
+| **Long-lived SSE connection + payment heartbeat (adopted)** | The server actively calls `res.end()` | The agent is still connected and still wants more, but the line is cut — enforcement is visible |
 
-**採用 SSE 長連線。** Ctrl-C 之所以能當 demo 觸發鍵,只在這個方案下成立。
+**Adopt the long-lived SSE connection.** Ctrl-C works as the demo trigger only under this option.
 
-### 2.2 三個端點,只有一個收費
+### 2.2 Three endpoints, only one charges
 
-| 端點 | x402 | 職責 |
+| Endpoint | x402 | Responsibility |
 | --- | --- | --- |
-| `POST /tick` | 收費 | 付一筆 → 建立或延長 session。回 `{ sessionId, accepted: true }` |
-| `GET /stream?sessionId=` | 免費 | SSE,session 活著就吐 token |
-| `GET /health` | 免費 | demo 腳本與啟動檢查用 |
+| `POST /tick` | Charged | Pay once → create or extend a session. Returns `{ sessionId, accepted: true }` |
+| `GET /stream?sessionId=` | Free | SSE; emits tokens while the session is alive |
+| `GET /health` | Free | For the demo script and startup checks |
 
-`/stream` 免費不構成漏洞:**session 只有付過錢才存在**,而 session 僅在 `POST /tick` 付款結算成功後才由 hook 建立(§2.5),因此不存在拿到免費 token 的路徑。此設計讓 x402 middleware 留在它天生擅長的 per-request 位置,SSE 那條完全不碰付款邏輯。
+`/stream` being free is not a loophole: **a session exists only if it has been paid for**, and a session is created by the hook only after the `POST /tick` payment settles successfully (§2.5), so there is no path to free tokens. This design keeps the x402 middleware in the per-request position it is naturally good at, and the SSE side never touches payment logic.
 
-#### 2.2.1 端點細節
+#### 2.2.1 Endpoint details
 
-- **sessionId 由 agent 產生**,`crypto.randomUUID()`,每次 `POST /tick` 以 `X-Drip-Session` header 送出。理由見 §2.5 —— session 的建立與延長發生在 settle 完成後的 hook 裡,而 hook 無法回頭改寫已定案的 response body,因此 id 必須由呼叫方提供。
+- **The sessionId is generated by the agent** with `crypto.randomUUID()` and sent on every `POST /tick` in the `X-Drip-Session` header. Rationale in §2.5 — session creation and extension happen in the hook after settle completes, and the hook cannot go back and rewrite an already-finalized response body, so the id must be supplied by the caller.
 
-- **被剪除的 sessionId 不可重用(tombstone),由 handler 在結算前擋下。** server 保留一個短時效(`TOMBSTONE_TTL_MS`)的已剪除 id 集合。`POST /tick` 的 handler 若發現送來的 id 命中該集合,**回 409**。
+- **A cut sessionId cannot be reused (tombstone); the handler blocks it before settlement.** The server keeps a short-lived (`TOMBSTONE_TTL_MS`) set of cut ids. If the `POST /tick` handler finds that the incoming id hits that set, it **returns 409**.
 
-  關鍵在於時機:middleware 的順序是 verify → handler → settle,且 dist 中 `if (res.statusCode >= 400)` 會呼叫 `cancellationDispatcher.cancel({ reason: "handler_failed" })` **取消結算**。因此 handler 回 409 時付款尚未上鏈,agent 不會被扣款。agent 收到 409 後產生新 UUID 重試即可。
+  The key is timing: the middleware order is verify → handler → settle, and in the dist, `if (res.statusCode >= 400)` calls `cancellationDispatcher.cancel({ reason: "handler_failed" })` to **cancel settlement**. So when the handler returns 409 the payment has not yet gone on-chain, and the agent is not charged. After receiving 409, the agent just generates a new UUID and retries.
 
-  理由:id 由 client 產生,agent 收到 `event: cut` 後若沿用同一顆 UUID 繼續付款,會讓已被 watchdog 清除的 session 以同一個 id 復活,`tickCount` 與 `spentAtomic` 從零重算,demo 最後的結算摘要因此少計。
+  Rationale: the id is generated by the client. If, after receiving `event: cut`, the agent kept paying with the same UUID, a session the watchdog had already cleared would be revived under the same id, with `tickCount` and `spentAtomic` recomputed from zero, so the settlement summary at the end of the demo would undercount.
 
-  **不可改用「照收付款並改發新 id」的做法** —— 那需要把新 id 寫進 response body,而 body 在 handler 呼叫 `res.end()` 時就已定案並緩衝,hook 改不動(與 txHash 同一個成因,見 §2.5)。agent 會拿著舊 id 去開 SSE 並得到 404。
+  **Do not switch to "accept the payment and issue a new id" instead** — that would require writing the new id into the response body, and the body is finalized and buffered when the handler calls `res.end()`, so the hook cannot change it (same root cause as the txHash, see §2.5). The agent would open the SSE with the old id and get a 404.
 
-  agent 端另應在收到 `cut` 後主動換新 UUID,兩層都做。
+  The agent should also proactively switch to a new UUID after receiving `cut`; do both layers.
 
-- **`POST /tick` 帶了不存在(且未被 tombstone)的 sessionId:** 視同新 session 建立。付款已經發生,拒絕等於收錢不給貨。
+- **`POST /tick` carrying a sessionId that does not exist (and is not tombstoned):** treated as creating a new session. The payment has already happened; refusing would mean taking the money and not delivering the goods.
 
-- **`POST /tick` 的回應不含 txHash。** tx hash 由 middleware 在 settle 後寫入 `X-PAYMENT-RESPONSE` header。agent 端讀法(注意須傳入 getHeader 函式,非無參數呼叫):
+- **The `POST /tick` response does not include the txHash.** The tx hash is written by the middleware into the `X-PAYMENT-RESPONSE` header after settle. How the agent reads it (note that you must pass in a getHeader function; it is not a no-argument call):
 
   ```ts
   import { x402HTTPClient } from "@x402/core/client";
@@ -110,133 +110,133 @@ DripLLM 的答案是第三條:**把時間切成 `CREDIT_PER_TICK_MS` 一格,任�
   const txHash = settle.transaction;
   ```
 
-- **SSE 事件三種:**
-  - `event: token` — `data` 為一段推論文字
-  - `event: credit` — `data` 為 `{ "remainingMs": n, "grace": bool, "tickCount": n, "spentAtomic": "..." }`,每 `CREDIT_EVENT_MS` 送一次
-  - `event: cut` — `data` 為 `{ "sessionId": "...", "reason": "payment_lapsed", "tickCount": n, "spentAtomic": "..." }`,送出後立即關閉連線
+- **Three SSE event types:**
+  - `event: token` — `data` is a chunk of inference text
+  - `event: credit` — `data` is `{ "remainingMs": n, "grace": bool, "tickCount": n, "spentAtomic": "..." }`, sent every `CREDIT_EVENT_MS`
+  - `event: cut` — `data` is `{ "sessionId": "...", "reason": "payment_lapsed", "tickCount": n, "spentAtomic": "..." }`; the connection is closed immediately after it is sent
 
-- **`remainingMs` 允許為負值**,且進入寬限期時 `grace: true`。若 clamp 在 0,agent 無法區分「餘額將盡」與「已逾期、正在寬限期內」,而 §4 的終端輸出正是要把這兩段分開呈現。
+- **`remainingMs` may be negative**, and `grace: true` once the grace period begins. If it were clamped at 0, the agent could not distinguish "credit about to run out" from "already overdue, inside the grace period", and the terminal output in §4 is exactly meant to present those two phases separately.
 
-- **第一筆 tick 不由 `event: credit` 驅動。** 補款時機雖由 credit 事件驅動,但 tick #1 發生時 session 尚不存在、SSE 也尚未開啟。agent 的啟動序列為:產生 UUID → `POST /tick`(建立 session)→ 以回應的 sessionId 開啟 SSE → 其後改由 `event: credit` 驅動補款。
+- **The first tick is not driven by `event: credit`.** Although top-up timing is driven by credit events, when tick #1 happens the session does not yet exist and the SSE is not yet open. The agent's startup sequence is: generate UUID → `POST /tick` (creates the session) → open the SSE with the returned sessionId → from then on, top-ups are driven by `event: credit`.
 
-### 2.3 信用額度模型,不是固定鬧鐘
+### 2.3 A credit model, not a fixed alarm clock
 
-一筆付款買到一段**串流時間**,agent 在**餘額將盡時**補款,而非固定間隔付款。
+One payment buys a slice of **streaming time**, and the agent tops up **when the credit is about to run out**, rather than paying at a fixed interval.
 
-若「每 N 秒付一次」且「一筆買 N 秒」,延遲會讓餘額逐 tick 向下漂移,數個 tick 後系統會在使用者未介入的情況下自行斷流。補款條件為餘額低於 `TOPUP_THRESHOLD_MS`,由 SSE 的 `event: credit` 驅動。
+If you "pay every N seconds" and "one payment buys N seconds", latency makes the credit drift downward tick by tick, and after a few ticks the system cuts the stream on its own without the user intervening. The top-up condition is credit falling below `TOPUP_THRESHOLD_MS`, driven by the SSE `event: credit`.
 
-**漂移的主要來源是鏈上結算,不是網路。** 見 §2.5。由此推出一條硬性約束:
+**The main source of drift is on-chain settlement, not the network.** See §2.5. This yields a hard constraint:
 
 ```
 TOPUP_THRESHOLD_MS > settle wall-clock
-CREDIT_PER_TICK_MS > TOPUP_THRESHOLD_MS(需有明顯餘裕)
+CREDIT_PER_TICK_MS > TOPUP_THRESHOLD_MS (with a clear margin)
 ```
 
-agent 必須在餘額耗盡前**至少一個 settle 週期**啟動補款,否則付款永遠追不上消耗。settle 實測值決定這兩個參數,因此 §8 的實作順序以量測 spike 開頭。
+The agent must start topping up **at least one settle cycle** before the credit runs out, otherwise payment will never catch up with consumption. The measured settle time determines these two parameters, which is why the implementation order in §8 starts with a measurement spike.
 
-### 2.4 SSE 連線物件不進 session 記錄
+### 2.4 The SSE connection object does not go into the session record
 
-`Session` 是唯讀純資料;Express 的 `Response` 物件存在旁邊一張副表 `Map<sessionId, Response>`。
+`Session` is read-only plain data; the Express `Response` object lives in a side table `Map<sessionId, Response>`.
 
-理由:斷流的正確性完全取決於 session 帳本的時序邏輯,把它保持成純函數 + 純資料,才能用假時鐘把所有邊界測到底而不必啟動 HTTP。
+Rationale: the correctness of the cut depends entirely on the timing logic of the session ledger. Keeping it as pure functions + plain data is what makes it possible to test every boundary exhaustively with a fake clock without starting HTTP.
 
 ---
 
-### 2.5 session 的建立與延長發生在 `onAfterSettle`,不在 Express handler
+### 2.5 Session creation and extension happen in `onAfterSettle`, not in the Express handler
 
-**經 `@x402/express@2.25.0` 的 dist 原始碼確認:settle 位於回應的關鍵路徑上。** middleware 劫持 `res.writeHead/write/end/flushHeaders` 全部緩衝,`await endPromise`(等 handler 呼叫 `res.end`)後才執行 `processSettlement`(上鏈),最後才在 `finally` 中把緩衝的 response 重播出去。**settle 完成前 client 收不到任何一個 byte。**
+**Confirmed from the dist source of `@x402/express@2.25.0`: settle sits on the critical path of the response.** The middleware hijacks `res.writeHead/write/end/flushHeaders` and buffers everything, runs `processSettlement` (on-chain) only after `await endPromise` (waiting for the handler to call `res.end`), and only at the very end, in `finally`, replays the buffered response. **The client receives not a single byte before settle completes.**
 
-因此 `POST /tick` 的 wall-clock = 402 challenge RTT + 簽章 + verify RTT + Fuji 上鏈結算。
+So the wall-clock of `POST /tick` = 402 challenge RTT + signing + verify RTT + on-chain settlement on Fuji.
 
-若在 handler 內計算 `paidUntil = now + CREDIT`,agent 要在 settle 完成後才收到回應,實際買到的串流時間是 `CREDIT − settle 延遲`。這正是 §2.3 要避免的漂移,只是來源是結算而非網路。
+If `paidUntil = now + CREDIT` were computed inside the handler, the agent would receive the response only after settle completes, and the streaming time it actually bought would be `CREDIT − settle latency`. That is exactly the drift §2.3 is trying to avoid, except the source is settlement rather than the network.
 
-**解法:** 把 session 的建立與延長移到 `x402ResourceServer.onAfterSettle(hook)`。
+**Solution:** move session creation and extension into `x402ResourceServer.onAfterSettle(hook)`.
 
-- `paidUntil` 從 **settle 完成的時刻**起算,結算延遲不再侵蝕額度
-- hook 的 `SettleResultContext.result` 帶 `SettleResponse`,其中 `transaction` 即 tx hash(必填)。付款地址不可用 `result.payer`,理由見 §2.6
-- hook 僅在 settle 成功時觸發,§7「settle 失敗不延長 `paidUntil`」自然成立,無需補償回滾
-- hook 可經 `transportContext` 讀取原始 request。完整路徑(已在 dist 中追過三層):
+- `paidUntil` is counted from **the moment settle completes**, so settlement latency no longer eats into the credit
+- The hook's `SettleResultContext.result` carries a `SettleResponse`, whose `transaction` is the tx hash (required). The payer address must not come from `result.payer`; see §2.6 for why
+- The hook fires only when settle succeeds, so §7's "a failed settle does not extend `paidUntil`" holds naturally, with no compensating rollback needed
+- The hook can read the original request via `transportContext`. The full path (traced three levels deep in the dist):
 
   ```ts
-  // AfterSettleHook 收到的是 { ...settleContext, result, transportContext }
-  // transportContext 是 HTTPTransportContext = { request: HTTPRequestContext, responseBody, responseHeaders }
-  // HTTPRequestContext.adapter 是 HTTPAdapter,其 getHeader(name) 直通 Express 的 req
+  // AfterSettleHook receives { ...settleContext, result, transportContext }
+  // transportContext is HTTPTransportContext = { request: HTTPRequestContext, responseBody, responseHeaders }
+  // HTTPRequestContext.adapter is an HTTPAdapter, whose getHeader(name) goes straight through to Express's req
   const sessionId = ctx.transportContext.request.adapter.getHeader("X-Drip-Session");
   ```
 
-**但 hook 無法改寫 response body。** body 在 handler 呼叫 `res.end()` 時就已定案並緩衝,hook 在其後執行且回傳 `Promise<void>`。因此:
+**But the hook cannot rewrite the response body.** The body is finalized and buffered when the handler calls `res.end()`; the hook runs after that and returns `Promise<void>`. Therefore:
 
-- `POST /tick` 的 body 只回 `{ sessionId, accepted: true }`(sessionId 是 agent 送來的,handler 原本就知道)
-- **tx hash 走 header**:middleware 在 settle 後 `res.setHeader` 寫入 `X-PAYMENT-RESPONSE`,agent 以 `x402HTTPClient.getPaymentSettleResponse()` 讀取
-- **餘額走 SSE**:`event: credit` 事件回報 `remainingMs`,agent 據此決定補款時機
+- The `POST /tick` body returns only `{ sessionId, accepted: true }` (the sessionId was sent by the agent, so the handler already knows it)
+- **The tx hash goes in a header**: after settle, the middleware writes `X-PAYMENT-RESPONSE` via `res.setHeader`, and the agent reads it with `x402HTTPClient.getPaymentSettleResponse()`
+- **Credit goes over SSE**: the `event: credit` event reports `remainingMs`, and the agent uses it to decide when to top up
 
-**限制:** hook 只能經 `paymentMiddleware(routes, server, ...)` 或 `paymentMiddlewareFromHTTPServer` 掛載,`paymentMiddlewareFromConfig` 接不到。v2.25.0 這三個函式皆為位置參數而非 options 物件,`syncFacilitatorOnStart` 是第 5 個位置參數。
+**Limitation:** the hook can only be attached via `paymentMiddleware(routes, server, ...)` or `paymentMiddlewareFromHTTPServer`; `paymentMiddlewareFromConfig` cannot take it. In v2.25.0 all three functions take positional parameters rather than an options object, and `syncFacilitatorOnStart` is the 5th positional parameter.
 
-**已知殘留風險:** 若 settle 成功但 hook 拋錯,agent 會收到 200 但 `/stream` 回 404。PoC 接受此情況,agent 對首次 `/stream` 404 重試一次後放棄並明確報錯。
+**Known residual risk:** if settle succeeds but the hook throws, the agent gets a 200 but `/stream` returns 404. The PoC accepts this; the agent retries the first `/stream` 404 once, then gives up and reports a clear error.
 
-### 2.6 付款者身分取自 `authorization.from`,不可取自 `result.payer`
+### 2.6 Payer identity comes from `authorization.from`, never from `result.payer`
 
-session 綁定首次付款地址,後續 tick 的付款者不符即拒絕延長(§2.2.1)。**此地址必須取自 payment payload 的 `authorization.from`。**
+A session is bound to the address of its first payment, and extension is refused when a later tick's payer does not match (§2.2.1). **This address must come from `authorization.from` in the payment payload.**
 
 ```ts
-type SettleResponse  = { ...; payer?: string; transaction: string; ... };  // payer 為 optional
-type VerifyResponse  = { ...; payer?: string; ... };                       // 同樣 optional
+type SettleResponse  = { ...; payer?: string; transaction: string; ... };  // payer is optional
+type VerifyResponse  = { ...; payer?: string; ... };                       // likewise optional
 
 type ExactEIP3009Payload = {
   signature?: `0x${string}`;
   authorization: {
-    from: `0x${string}`;   // 必填,且屬於 EIP-712 簽章的一部分
+    from: `0x${string}`;   // required, and part of the EIP-712 signature
     ...
   };
 };
 ```
 
-若以 `result.payer` 綁定,而 facilitator 未回填該欄位,首次付款會把 `undefined` 寫進 session,後續每一筆的付款者同樣是 `undefined`,`undefined === undefined` 恆為真 —— **保護完全失效,且全程不會產生任何錯誤訊息**。這比不做綁定更危險,因為文件會讓實作者以為已經擋住了。
+If binding used `result.payer` and the facilitator did not populate that field, the first payment would write `undefined` into the session, every later payer would likewise be `undefined`, and `undefined === undefined` is always true — **the protection fails completely, without producing a single error message**. This is more dangerous than no binding at all, because the document would lead implementers to believe it is already blocked.
 
-`authorization.from` 是必填欄位,且 facilitator 剛驗過的 EIP-712 簽章正是對它簽的,因此在密碼學上綁定,不依賴 facilitator 是否肯回填某個 optional 欄位。
+`authorization.from` is a required field, and the EIP-712 signature the facilitator just verified is a signature over exactly it, so it is cryptographically bound and does not depend on whether the facilitator bothers to populate some optional field.
 
-**取值規則:**
+**Value rule:**
 
 ```
 payer = authorization.from ?? result.payer
-若兩者皆空 → 立即拋錯,拒絕建立 session,絕不綁定 undefined
+if both are empty → throw immediately, refuse to create the session, never bind undefined
 ```
 
-`paymentPayload.payload` 的宣告型別是 `Record<string, unknown>`,需 cast 為 `ExactEIP3009Payload`。此 cast 應集中在 `settleHook.ts` 的單一函式中,並使 payer 成為 `upsertSession` 的純函數輸入,以便在第 1 層測試中直接驗證不符情境。
+The declared type of `paymentPayload.payload` is `Record<string, unknown>` and must be cast to `ExactEIP3009Payload`. This cast should be concentrated in a single function in `settleHook.ts`, and the payer should be made a pure-function input to `upsertSession`, so the mismatch case can be verified directly in layer 1 tests.
 
-## 3. 技術選型(均已驗證)
+## 3. Technology choices (all verified)
 
-### 3.1 套件
+### 3.1 Packages
 
-使用 **x402 協定 v2**:`@x402/express`、`@x402/core`、`@x402/evm`、`@x402/fetch`、`viem`。
+Use **x402 protocol v2**: `@x402/express`, `@x402/core`, `@x402/evm`, `@x402/fetch`, `viem`.
 
-> **不使用 `x402-express`。** v1 已 deprecated,僅接收 security patch。v2 的 API 形狀與 network 識別字皆不同。注意 thirdweb 等第三方文件多半仍停在 v1 寫法。
+> **Do not use `x402-express`.** v1 is deprecated and receives only security patches. v2 differs in both API shape and network identifiers. Note that third-party docs such as thirdweb's are mostly still stuck on v1 usage.
 
-network 識別字採 CAIP-2 格式:`eip155:43113`(非 v1 的 `"avalanche-fuji"`)。
+Network identifiers use CAIP-2 format: `eip155:43113` (not v1's `"avalanche-fuji"`).
 
-**版本鎖定 `2.25.0`。** 本文件所有關於套件內部行為的敘述,皆以實際安裝的 `2.25.0` dist 為準。`coinbase/x402` 的 `main` branch 與已發佈版本存在差異(見 §3.3),不可用 GitHub 上的原始碼推斷已發佈版本的行為。
+**Version pinned to `2.25.0`.** Every statement in this document about the packages' internal behavior is based on the actually installed `2.25.0` dist. The `main` branch of `coinbase/x402` differs from the published version (see §3.3); do not infer the published version's behavior from the source on GitHub.
 
-### 3.2 鏈與資產(Avalanche Fuji 測試網)
+### 3.2 Chain and asset (Avalanche Fuji testnet)
 
-| 項目 | 值 |
+| Item | Value |
 | --- | --- |
-| Chain ID | 43113(CAIP-2:`eip155:43113`) |
+| Chain ID | 43113 (CAIP-2: `eip155:43113`) |
 | RPC | `https://api.avax-test.network/ext/bc/C/rpc` |
-| USDC 合約 | `0x5425890298aed601595a70AB815c96711a31Bc65` |
+| USDC contract | `0x5425890298aed601595a70AB815c96711a31Bc65` |
 | EIP-712 domain name | `USD Coin` |
 | EIP-712 domain version | `2` |
 | decimals | `6` |
-| EIP-3009 | 已確認支援(`authorizationState()` 有回應) |
+| EIP-3009 | Support confirmed (`authorizationState()` responds) |
 | AVAX faucet | Core Wallet console |
 | USDC faucet | Circle faucet |
 
-上述 `name` / `version` / `decimals` / EIP-3009 皆由 `eth_call` 直接自 Fuji 鏈上讀取確認。
+The `name` / `version` / `decimals` / EIP-3009 values above were all confirmed by reading directly from the Fuji chain via `eth_call`.
 
-> **`name` 是 `USD Coin`,不是 `USDC`。** Base Sepolia 的 USDC domain name 為 `USDC`,Fuji 為 `USD Coin`。此值是 EIP-712 domain 的一部分,填錯會導致簽章驗證失敗,且錯誤訊息不會指向此處。
+> **`name` is `USD Coin`, not `USDC`.** On Base Sepolia the USDC domain name is `USDC`; on Fuji it is `USD Coin`. This value is part of the EIP-712 domain; getting it wrong makes signature verification fail, and the error message will not point here.
 
-### 3.3 價格必須顯式指定資產(server 端)
+### 3.3 The price must specify the asset explicitly (server side)
 
-`@x402/evm@2.25.0` 匯出 `DEFAULT_ASSETS`(以及 `findDefaultAsset`、`getDefaultAsset`)。實際列出該表的 EVM 網路:
+`@x402/evm@2.25.0` exports `DEFAULT_ASSETS` (along with `findDefaultAsset` and `getDefaultAsset`). The EVM networks that table actually lists:
 
 ```
 eip155:1, 14, 50, 51, 137, 143, 988, 1328, 1329, 2201, 4326, 8453,
@@ -244,43 +244,43 @@ eip155:1, 14, 50, 51, 137, 143, 988, 1328, 1329, 2201, 4326, 8453,
 181228, 190415, 421614, 723487, 11142220
 ```
 
-**`eip155:43114`(Avalanche 主網)在表內,`eip155:43113`(Fuji)不在。** 因此 `price: "$0.001"` 搭配 `network: "eip155:43113"` 無法解析出資產位址。
+**`eip155:43114` (Avalanche mainnet) is in the table; `eip155:43113` (Fuji) is not.** So `price: "$0.001"` combined with `network: "eip155:43113"` cannot resolve an asset address.
 
-`price` 亦接受 `AssetAmount` 物件,故採顯式寫法:
+`price` also accepts an `AssetAmount` object, so we use the explicit form:
 
 ```ts
 price: {
-  amount: "1000",                                    // 0.001 USDC(6 decimals)
+  amount: "1000",                                    // 0.001 USDC (6 decimals)
   asset: "0x5425890298aed601595a70AB815c96711a31Bc65",
   extra: { name: "USD Coin", version: "2" },
 }
 ```
 
-> **注意版本差異。** `coinbase/x402` 的 `main` branch 中此表名為 `DEFAULT_STABLECOINS` 且不含任何 Avalanche 網路;已發佈的 `2.25.0` 則名為 `DEFAULT_ASSETS` 且含主網 43114。以安裝版本為準,勿依 GitHub 原始碼推斷。
+> **Watch out for version differences.** In the `main` branch of `coinbase/x402` this table is named `DEFAULT_STABLECOINS` and contains no Avalanche networks at all; the published `2.25.0` names it `DEFAULT_ASSETS` and includes mainnet 43114. Go by the installed version; do not infer from the GitHub source.
 
-### 3.3.1 client 端必須開放 Fuji 資產
+### 3.3.1 The client side must allow the Fuji asset
 
-`x402Client` 的 `spendControls` **預設只允許 `findDefaultAsset` 認得的資產**。由於 Fuji 不在 `DEFAULT_ASSETS` 中,預設設定會直接拒付,且錯誤訊息不會指向此處。
+The `x402Client`'s `spendControls` **by default only allows assets that `findDefaultAsset` recognizes**. Since Fuji is not in `DEFAULT_ASSETS`, the default configuration refuses to pay outright, and the error message will not point here.
 
-必須顯式開放:
+It must be allowed explicitly:
 
 ```ts
 spendControls: {
   allowedAssets: [{
     network: "eip155:43113",
     asset: "0x5425890298aed601595a70AB815c96711a31Bc65",
-    maxAmountPerPayment: "1000",   // 整數 atomic 單位,不是 "$1"
+    maxAmountPerPayment: "1000",   // integer atomic units, not "$1"
   }],
 }
 ```
 
-`maxAmountPerPayment` 在此同時充當單筆付款的硬上限,與 agent 自己的累計花費上限(`MAX_SPEND_ATOMIC`)是兩層獨立防線。
+`maxAmountPerPayment` here also serves as a hard cap per payment, and together with the agent's own cumulative spending cap (`MAX_SPEND_ATOMIC`) forms two independent lines of defense.
 
-### 3.4 Facilitator:自架 x402-rs
+### 3.4 Facilitator: self-hosted x402-rs
 
-不使用託管服務。`facilitator.x402.rs` 的託管實例不支援 Fuji;thirdweb 託管需綁第三方帳號且文件停留在 v1。
+No hosted service is used. The hosted instance at `facilitator.x402.rs` does not support Fuji; thirdweb's hosted offering requires a third-party account and its docs are stuck on v1.
 
-自架 x402-rs 的 `config.json` 按 CAIP-2 chain id 泛用配置,加入 `eip155:43113` 條目即可支援 Fuji,無須等待上游支援。x402-rs 已完整支援協定 v2(scheme `v2-eip155-exact`)。
+A self-hosted x402-rs `config.json` is configured generically by CAIP-2 chain id; adding an `eip155:43113` entry is enough to support Fuji, without waiting for upstream support. x402-rs fully supports protocol v2 (scheme `v2-eip155-exact`).
 
 ```json
 {
@@ -299,125 +299,125 @@ spendControls: {
 }
 ```
 
-Docker:`ghcr.io/x402-rs/x402-facilitator`,掛載 config.json 至 `/app/config.json`,對外 8080。
-端點:`/verify`、`/settle`、`/supported`、`/health`。
+Docker: `ghcr.io/x402-rs/x402-facilitator`, mount config.json at `/app/config.json`, expose 8080.
+Endpoints: `/verify`, `/settle`, `/supported`, `/health`.
 
-**facilitator 的 signer 錢包需自備 AVAX 支付 gas。**
+**The facilitator's signer wallet must hold its own AVAX to pay gas.**
 
 ---
 
-## 4. 執行時序
+## 4. Runtime sequence
 
 ```
 agent                          server                      facilitator
   │                              │                              │
   ├─ POST /tick ────────────────▶│                              │
-  │◀──────────── 402 + 價格/資產 ─┤                              │
+  │◀────────── 402 + price/asset ┤                              │
   ├─ POST /tick + X-PAYMENT ────▶├─ verify ────────────────────▶│
   │                              │◀─────────────────────── ok ──┤
   │                              ├─ settle ────────────────────▶│──▶ Fuji
   │                              │◀──────── SettleResponse ─────┤
-  │                              ├─ onAfterSettle: 建立 session  │
-  │                              │   paidUntil = 此刻 + CREDIT   │
-  │◀── {sessionId, accepted} ────┤   (response 至此才被 flush)   │
+  │                              ├─ onAfterSettle: new session  │
+  │                              │   paidUntil = now + CREDIT   │
+  │◀── {sessionId, accepted} ────┤   (response flushed only now)│
   ├─ GET /stream?sessionId ─────▶│                              │
-  │◀════ token / credit 事件 ═════╡
+  │◀════ token / credit events ══╡
   │                              │
-  ├─ POST /tick(收到 event:credit ─▶│ paidUntil = max(now, paidUntil) + CREDIT
-  │   且 remainingMs < 門檻時)     │  (同樣在 settle 完成後才計算)
+  ├─ POST /tick (on event:credit▶│ paidUntil = max(now, paidUntil) + CREDIT
+  │  when remainingMs < threshold│  (likewise computed only after settle completes)
   │◀════ token token token ══════╡
   │                              │
-  │  ^C 停付,連線保持             │
-  │◀════ token token ════════════╡  餘額燒完 + 寬限 2s 內照流
+  │  ^C stop paying, stay open   │
+  │◀════ token token ════════════╡  credit burns out + keeps streaming within 2s grace
   │                              │  watchdog: now > paidUntil + GRACE_MS
   │◀──── event: cut ─────────────┤
   │◀──── [connection closed] ────┤
 ```
 
-**停付至斷線的間隔 = 停付當下的剩餘餘額 + `GRACE_MS`。**
+**Interval from stopping payment to disconnect = credit remaining at the moment payment stops + `GRACE_MS`.**
 
-以 §5 定案值(CREDIT 25s / TOPUP 15s / GRACE 2s)推算,停付當下餘額落在 15～25 秒,故**停付至斷線的間隔為 2～27 秒**。2026-09-06 實測:停付後 token 繼續流動至額度耗盡,寬限期內 agent 端顯示負餘額倒數(實測 -141ms → -1643ms),隨後 server 剪線。
+Using the finalized values in §5 (CREDIT 25s / TOPUP 15s / GRACE 2s), credit at the moment payment stops falls between 15 and 25 seconds, so **the interval from stopping payment to disconnect is 2-27 seconds**. Measured on 2026-09-06: after payment stopped, tokens kept flowing until the credit was used up; during the grace period the agent displayed a negative credit countdown (measured -141ms → -1643ms), and then the server cut the line.
 
-此範圍的變動性是刻意保留的 —— 讓每次 demo 略有不同,看起來像真的在燒餘額而非跑腳本。
+The variability of this range is deliberately kept — it makes each demo slightly different, so it looks like credit is really burning rather than a script running.
 
-server 端須將倒數輸出至終端,讓觀眾理解那幾秒不是當機:
+The server must print the countdown to the terminal so the audience understands those few seconds are not a hang:
 
 ```
-[server] session 7f3a · 餘額 1.2s
-[server] session 7f3a · 餘額 0.4s
-[server] session 7f3a · ⚠ 逾期,寬限 2.0s
-[server] session 7f3a · ✂ 切斷串流
+[server] session 7f3a · credit 1.2s
+[server] session 7f3a · credit 0.4s
+[server] session 7f3a · ⚠ overdue, grace 2.0s
+[server] session 7f3a · ✂ cutting stream
 ```
 
 ---
 
-## 5. 參數
+## 5. Parameters
 
-> **已定案(2026-09-06,依 §8 量測 spike 實測)。** 402 challenge RTT 5.5ms;完整 tick wall-clock 7.4～10.6s(三次實測,鏈上 settle 主導)。門檻取實測最大 × 1.4(15s)並留有 4.4s 餘裕,credit 取 25s 兼顧 demo 節奏。若 Fuji 延遲顯著變化需重新量測。
+> **Finalized (2026-09-06, measured per the §8 measurement spike).** 402 challenge RTT 5.5ms; full tick wall-clock 7.4-10.6s (three measurements, dominated by on-chain settle). The threshold is the measured maximum × 1.4 (15s), leaving a 4.4s margin; credit is set to 25s to balance demo pacing. Re-measure if Fuji latency changes significantly.
 
-| 參數 | 定案值 | 說明 |
+| Parameter | Finalized value | Description |
 | --- | --- | --- |
-| `CREDIT_PER_TICK_MS` | `25000` | 一筆付款買到的串流時間(實測 settle 7.4-10.6s,須有餘裕) |
-| `TOPUP_THRESHOLD_MS` | `15000` | 餘額低於此值即補款(> settle 最大實測 10.6s) |
-| `GRACE_MS` | `2000` | 逾期後 server 才剪線的寬限 |
+| `CREDIT_PER_TICK_MS` | `25000` | Streaming time bought by one payment (measured settle 7.4-10.6s; needs margin) |
+| `TOPUP_THRESHOLD_MS` | `15000` | Top up when credit falls below this value (> max measured settle of 10.6s) |
+| `GRACE_MS` | `2000` | Grace period after going overdue before the server cuts the line |
 | `PRICE_PER_TICK_ATOMIC` | `1000` | 0.001 USDC |
-| `MAX_SPEND_ATOMIC` | `50000` | 0.05 USDC,約 50 個 tick |
-| `TOKEN_INTERVAL_MS` | `120` | token 送出間隔,模擬串流節奏 |
-| `CREDIT_EVENT_MS` | `500` | `event: credit` 的送出間隔 |
-| `WATCHDOG_SWEEP_MS` | `250` | 單一掃描 timer 的週期 |
-| `TOMBSTONE_TTL_MS` | `60000` | 已剪除 sessionId 的保留時間,擋重用 |
+| `MAX_SPEND_ATOMIC` | `50000` | 0.05 USDC, about 50 ticks |
+| `TOKEN_INTERVAL_MS` | `120` | Interval between tokens, simulating streaming pace |
+| `CREDIT_EVENT_MS` | `500` | Interval between `event: credit` sends |
+| `WATCHDOG_SWEEP_MS` | `250` | Period of the single sweep timer |
+| `TOMBSTONE_TTL_MS` | `60000` | How long cut sessionIds are retained, to block reuse |
 
-必須滿足的約束(見 §2.3):
+Constraints that must hold (see §2.3):
 
 ```
 TOPUP_THRESHOLD_MS > settle wall-clock
-CREDIT_PER_TICK_MS > TOPUP_THRESHOLD_MS(需有明顯餘裕)
-GRACE_MS 決定「停付到剪線」的下界
+CREDIT_PER_TICK_MS > TOPUP_THRESHOLD_MS (with a clear margin)
+GRACE_MS sets the lower bound of "stop paying to cut"
 ```
 
-所有參數經 `src/config.ts` 以 zod 驗證後注入,無硬編碼。測試以注入小常數的方式縮短週期(見 §8)。
+All parameters are validated with zod in `src/config.ts` and then injected; nothing is hardcoded. Tests shorten the cycle by injecting small constants (see §8).
 
-## 6. 元件與檔案結構
+## 6. Components and file structure
 
 ```
 DripLLM/
-├── docker-compose.yml            facilitator 一鍵起
+├── docker-compose.yml            one-command facilitator startup
 ├── facilitator/config.json       eip155:43113 + v2-eip155-exact
 ├── .env.example
 ├── src/
-│   ├── config.ts                 zod 驗證所有 env
+│   ├── config.ts                 zod validation of all env
 │   ├── shared/
-│   │   ├── usdc.ts               Fuji 資產常數 + atomic 換算
-│   │   └── logger.ts             結構化終端輸出
+│   │   ├── usdc.ts               Fuji asset constants + atomic conversion
+│   │   └── logger.ts             structured terminal output
 │   ├── server/
 │   │   ├── main.ts               bootstrap
-│   │   ├── payment.ts            x402 middleware 組裝(顯式 AssetAmount)
-│   │   ├── settleHook.ts         onAfterSettle —— session 建立/延長的唯一入口
-│   │   ├── payer.ts              自 payload 取出付款者身分(§2.6)
-│   │   ├── sessions.ts           不可變 session 帳本(純函數)
-│   │   ├── registry.ts           store 的唯一持有者(§6.3.1)
-│   │   ├── watchdog.ts           單一 sweep timer + 剪線
+│   │   ├── payment.ts            x402 middleware assembly (explicit AssetAmount)
+│   │   ├── settleHook.ts         onAfterSettle — the only entry point for session create/extend
+│   │   ├── payer.ts              extracts payer identity from the payload (§2.6)
+│   │   ├── sessions.ts           immutable session ledger (pure functions)
+│   │   ├── registry.ts           sole holder of the store (§6.3.1)
+│   │   ├── watchdog.ts           single sweep timer + cut
 │   │   ├── stream.ts             SSE handler
 │   │   ├── tick.ts               POST /tick
-│   │   └── tokenSource.ts        TokenSource 介面 + 罐頭實作
+│   │   └── tokenSource.ts        TokenSource interface + canned implementation
 │   └── agent/
-│       ├── main.ts               bootstrap + SIGINT 兩段式
+│       ├── main.ts               bootstrap + two-stage SIGINT
 │       ├── wallet.ts             viem signer + x402Client
-│       ├── ledger.ts             花費上限與累計(純函數)
-│       ├── sse.ts                手寫 SSE 解析(Node 無 EventSource,見 §6.5)
-│       ├── heartbeat.ts          補款迴圈(由 event: credit 驅動)
-│       └── render.ts             終端輸出
+│       ├── ledger.ts             spending cap and running total (pure functions)
+│       ├── sse.ts                hand-written SSE parsing (Node has no EventSource, see §6.5)
+│       ├── heartbeat.ts          top-up loop (driven by event: credit)
+│       └── render.ts             terminal output
 └── tests/
 ```
 
-每個檔案預期在 100–150 行內。
+Each file is expected to stay within 100–150 lines.
 
-### 6.1 Session 帳本介面
+### 6.1 Session ledger interface
 
 ```ts
 export type Session = Readonly<{
   id: string;
-  payer: string;          // 取自 authorization.from,見 §2.6;後續 tick 須相符
+  payer: string;          // from authorization.from, see §2.6; later ticks must match
   paidUntilMs: number;
   spentAtomic: bigint;
   tickCount: number;
@@ -430,15 +430,15 @@ upsertSession(store, id, payer, nowMs, creditMs, priceAtomic, txHash):
     { store: SessionStore; session: Session; rejected?: "payer_mismatch" }
 expiredSessions(store, nowMs, graceMs):   readonly Session[]
 removeSession(store, id):                 SessionStore
-remainingMs(session, nowMs):              number      // 可為負值,見 §2.2.1
+remainingMs(session, nowMs):              number      // may be negative, see §2.2.1
 inGrace(session, nowMs, graceMs):         boolean
 ```
 
-全為純函數:`id`、`payer`、`nowMs`、`txHash` 皆由呼叫端傳入,函數內不呼叫 `crypto.randomUUID()` 或 `Date.now()`。這是 §2.4 所稱「用假時鐘測到底」的前提。
+All are pure functions: `id`, `payer`, `nowMs`, and `txHash` are all passed in by the caller, and no function calls `crypto.randomUUID()` or `Date.now()`. This is the precondition for what §2.4 calls "testing exhaustively with a fake clock".
 
-`upsertSession` 合併了原先的 `createSession` / `extendSession`:兩者的差別僅在 store 中有無該 id,而 §2.2.1 已定義兩種情況的行為相同(建立或延長),拆成兩個函式只會讓呼叫端多一次分支判斷。
+`upsertSession` merges the former `createSession` / `extendSession`: the only difference between them is whether the id is in the store, and §2.2.1 already defines the behavior for both cases as the same (create or extend), so splitting them into two functions would only force the caller into an extra branch.
 
-### 6.2 Token 來源介面
+### 6.2 Token source interface
 
 ```ts
 export interface TokenSource {
@@ -446,191 +446,191 @@ export interface TokenSource {
 }
 ```
 
-PoC 實作循環吐出一段罐頭文字。日後接真實 LLM 只需替換此檔案的實作,收費層無須改動。
+The PoC implementation cycles through a piece of canned text. Hooking up a real LLM later only requires replacing this file's implementation; the billing layer needs no changes.
 
 ### 6.3 Watchdog
 
-**單一** `setInterval(WATCHDOG_SWEEP_MS)` 掃描全部 session,而非每條連線一個 timer。
+A **single** `setInterval(WATCHDOG_SWEEP_MS)` sweeps all sessions, rather than one timer per connection.
 
-剪線步驟必須依此順序:
+The cut steps must follow this order:
 
-1. **先把 session 物件取下來**(`tickCount`、`spentAtomic` 之後要用)
-2. 自帳本 `removeSession(store, id)`,並把 id 記入 tombstone 集合
-3. 送 `event: cut`,payload 使用步驟 1 取下的值
+1. **Take the session object out first** (`tickCount` and `spentAtomic` are needed later)
+2. `removeSession(store, id)` from the ledger, and record the id in the tombstone set
+3. Send `event: cut`, with a payload using the values taken in step 1
 4. `res.end()`
 
-步驟 1 不可省略:`event: cut` 的 payload 帶 `tickCount` 與 `spentAtomic`,若在移除後才取,兩者會是 `undefined` —— 而那正是 demo 最後一行的結算摘要。
+Step 1 cannot be skipped: the `event: cut` payload carries `tickCount` and `spentAtomic`; if they were read after removal, both would be `undefined` — and that is exactly the settlement summary on the last line of the demo.
 
-步驟 2 先於 4 的理由:`res.end()` 會觸發 Express 的 `close` 事件,與「agent 主動斷線」走同一個 handler。先移除帳本,`close` handler 便可用「該 id 是否仍在帳本中」區分兩者 —— 仍在代表 agent 自己斷的,已不在代表是 watchdog 剪的。日誌因此能正確標示,而那正是整個 demo 要證明的區別。清除操作本身是冪等的。
+Why step 2 comes before step 4: `res.end()` triggers Express's `close` event, which goes through the same handler as "the agent disconnecting on its own". By removing from the ledger first, the `close` handler can use "is this id still in the ledger" to tell the two apart — still present means the agent disconnected itself; already gone means the watchdog cut it. The logs can then label it correctly, and that is precisely the distinction the whole demo sets out to prove. The cleanup itself is idempotent.
 
-#### 6.3.1 不可變 store 的持有方式
+#### 6.3.1 How the immutable store is held
 
-帳本是不可變的,每次更新都產生新物件。因此 `close` handler、watchdog、hook **都不得閉包捕獲 store 本身**,否則永遠讀到註冊當下的舊快照,上述的「是否仍在帳本中」判斷會全部反向。
+The ledger is immutable; every update produces a new object. Therefore the `close` handler, the watchdog, and the hook **must never capture the store itself in a closure**, or they will forever read the stale snapshot from registration time, and the "is it still in the ledger" check above would all come out inverted.
 
-所有存取一律經由單一持有者:
+All access goes through a single holder:
 
 ```ts
-// registry.ts —— 唯一可變的一格,內容仍是不可變資料
+// registry.ts — the only mutable cell; its contents are still immutable data
 const registry = { current: new Map() as SessionStore };
 export const getStore = () => registry.current;
 export const setStore = (next: SessionStore) => { registry.current = next; };
 ```
 
-handler 內一律 `getStore()` 現讀,不接受 store 作為參數捕獲。§6.1 的純函數本身仍接收 store 參數並回傳新 store —— 可變性被侷限在這一格,純函數與其測試不受影響。
+Handlers always read fresh via `getStore()` and never accept the store as a captured parameter. The pure functions in §6.1 still take a store parameter and return a new store — mutability is confined to this one cell, and the pure functions and their tests are unaffected.
 
-### 6.4 Agent 的 SIGINT 兩段式
+### 6.4 The agent's two-stage SIGINT
 
-- 第一次 Ctrl-C:`paying = false`,輸出「已停止付款,連線保持中」,**繼續讀取 stream**
-- 第二次 Ctrl-C:真正退出
+- First Ctrl-C: `paying = false`, print "Stopped paying, connection still open", **keep reading the stream**
+- Second Ctrl-C: actually exit
 
-第一段是整個 demo 成立的關鍵 —— agent 仍連線、仍在等待,線是 server 剪的。
+The first stage is what makes the whole demo work — the agent is still connected, still waiting, and the line is cut by the server.
 
 ---
 
-### 6.5 SSE 解析(agent 端)
+### 6.5 SSE parsing (agent side)
 
-Node v26.5.0 實測 `typeof EventSource === "undefined"`,需 `--experimental-eventsource` 旗標才有。PoC 不依賴實驗性旗標,改以 `fetch` 取得 `ReadableStream` 後手寫解析。
+Measured on Node v26.5.0: `typeof EventSource === "undefined"`; it is only available with the `--experimental-eventsource` flag. The PoC does not depend on experimental flags; instead it gets a `ReadableStream` via `fetch` and parses it by hand.
 
-`src/agent/sse.ts` 需處理:chunk 邊界可能切在 SSE frame 中間(以 `\n\n` 分隔),因此須保留未消化的尾段緩衝區,逐次累加後再切分。此檔案有獨立的純函數單元測試(見 §8),餵入刻意切碎的 chunk 序列驗證 frame 還原。
+`src/agent/sse.ts` must handle: chunk boundaries may fall in the middle of an SSE frame (frames are separated by `\n\n`), so it must keep a buffer of the undigested tail, append to it each time, and then split. This file has its own pure-function unit tests (see §8) that feed in deliberately fragmented chunk sequences to verify frame reconstruction.
 
-## 7. 錯誤處理
+## 7. Error handling
 
-| 情況 | 行為 | 使用者訊息 |
+| Situation | Behavior | User message |
 | --- | --- | --- |
-| 啟動時 facilitator 無回應 | server 拒絕啟動 | `facilitator 無回應 (localhost:8080) —— 先跑 docker compose up` |
-| facilitator 中途失效 | `/tick` 回 503,session 自然逾期被剪 | `付款服務中斷,串流即將斷線` |
-| settle 失敗(facilitator 無 gas) | `onAfterSettle` 不觸發,session 不建立/不延長;middleware 丟棄 handler 的 body 改送自己的 402 | `結算失敗:facilitator 錢包 AVAX 不足` |
-| agent USDC 不足 | settle revert | `USDC 餘額不足 —— 前往 Circle faucet 領取` |
-| sessionId 不存在或已過期 | `/stream` 回 404 | `session 不存在或已過期,請先付款` |
-| 同一 sessionId 開第二條 SSE | 回 409,拒絕 | 防止一份付款餵多條串流 |
-| agent 連線中斷 | 清除 session 與副表項目 | (防止 watchdog 資源洩漏) |
-| settle 成功但 hook 拋錯 | agent 收到 200 但 `/stream` 回 404 | agent 重試一次後放棄:`session 建立失敗,該筆付款已結算但未生效` |
-| tick 的 payer 與 session 不符 | hook 拒絕延長並記錄;**無法回 403**,因為 hook 在 response 定案後才執行。該 session 不再續命,最終由 watchdog 剪線 | server 端日誌:`session 屬於其他付款者,拒絕延長` |
-| `authorization.from` 與 `result.payer` 皆空 | 立即拋錯,不建立 session(見 §2.6) | `無法確認付款者身分,拒絕建立 session` |
-| tick 的 sessionId 命中 tombstone | handler 回 409,middleware 取消結算,**不扣款** | agent 產生新 UUID 後重試 |
-| env 缺漏或格式錯 | zod 於啟動時失敗 | **一次列出全部**缺漏項,而非只報第一個 |
-| 花費上限用罄 | agent 停付但保持連線 | `已達上限 $0.05,停止付款 —— 等待 server 斷流` |
+| Facilitator not responding at startup | Server refuses to start | `facilitator not responding (localhost:8080) — run docker compose up first` |
+| Facilitator fails mid-run | `/tick` returns 503; the session naturally goes overdue and is cut | `Payment service down, stream about to disconnect` |
+| Settle fails (facilitator has no gas) | `onAfterSettle` does not fire, the session is not created/extended; the middleware discards the handler's body and sends its own 402 instead | `Settlement failed: facilitator wallet is short on AVAX` |
+| Agent has insufficient USDC | Settle reverts | `Insufficient USDC wallet balance — get some from the Circle faucet` |
+| sessionId does not exist or has expired | `/stream` returns 404 | `Session does not exist or has expired; please pay first` |
+| Second SSE opened for the same sessionId | Returns 409, refused | Prevents one payment from feeding multiple streams |
+| Agent connection drops | Clear the session and its side-table entry | (Prevents watchdog resource leaks) |
+| Settle succeeds but the hook throws | Agent gets 200 but `/stream` returns 404 | Agent retries once then gives up: `Session creation failed; the payment was settled but did not take effect` |
+| Tick's payer does not match the session | The hook refuses to extend and logs it; **cannot return 403**, because the hook runs after the response is finalized. The session is no longer renewed and is eventually cut by the watchdog | Server log: `Session belongs to another payer; refusing to extend` |
+| Both `authorization.from` and `result.payer` are empty | Throw immediately, do not create the session (see §2.6) | `Cannot confirm payer identity; refusing to create session` |
+| Tick's sessionId hits a tombstone | Handler returns 409, middleware cancels settlement, **no charge** | Agent generates a new UUID and retries |
+| env missing or malformed | zod fails at startup | **List all** missing items at once, rather than reporting only the first |
+| Spending cap exhausted | Agent stops paying but stays connected | `Reached cap of $0.05, stopped paying — waiting for server to cut the stream` |
 
 ---
 
-## 8. 測試策略與實作順序
+## 8. Test strategy and implementation order
 
-TDD:先寫測試(RED)、再實作(GREEN)、後重構。涵蓋率門檻 80%,掛在第 1、2 層,spike 與第 3 層排除計算。
+TDD: write tests first (RED), then implement (GREEN), then refactor. The coverage threshold is 80%, applied to layers 1 and 2; the spike and layer 3 are excluded from the calculation.
 
-### 第 0 步 — 量測 spike(**已於 2026-09-06 完成**,資料如下)
+### Step 0 — Measurement spike (**completed 2026-09-06**, data below)
 
-實測結果:402 challenge RTT = 5.5ms(不碰鏈);完整 tick wall-clock = 10.6s / 8.6s / 7.4s。依實測定案 §5 參數(TOPUP 15s / CREDIT 25s)。量測併入 `scripts/smoke.ts` 的每 tick 記時,未建獨立 throwaway 腳本。
+Measured results: 402 challenge RTT = 5.5ms (does not touch the chain); full tick wall-clock = 10.6s / 8.6s / 7.4s. §5 parameters finalized from the measurements (TOPUP 15s / CREDIT 25s). The measurement was folded into the per-tick timing of `scripts/smoke.ts`; no separate throwaway script was built.
 
-**產出是三個數字,不是要保留的程式碼。**
+**The output is three numbers, not code to keep.**
 
-起 facilitator,寫一支約 30 行的拋棄式腳本,對真實 Fuji 跑一次完整 tick,量測:
+Start the facilitator, write a throwaway script of about 30 lines, run one full tick against real Fuji, and measure:
 
 1. 402 challenge RTT
 2. verify RTT
-3. **settle wall-clock**(最關鍵)
+3. **settle wall-clock** (the most critical)
 
-依實測值定案 §5 的 `CREDIT_PER_TICK_MS` 與 `TOPUP_THRESHOLD_MS`,並回頭更新 §4 時序圖與 §10 驗收標準 #5 的秒數。
+Finalize §5's `CREDIT_PER_TICK_MS` and `TOPUP_THRESHOLD_MS` from the measured values, and go back to update the seconds in the §4 sequence diagram and §10 acceptance criterion #5.
 
-理由見 §2.5:settle 位於回應的關鍵路徑上,其耗時直接決定參數是否可行。在不知道這個數字的情況下寫下去,等於賭 demo 不會自己斷流。腳本跑完即丟。
+Rationale in §2.5: settle sits on the critical path of the response, and how long it takes directly determines whether the parameters are viable. Writing ahead without knowing this number is betting that the demo won't cut its own stream. Throw the script away once it has run.
 
-### 第 1 層 — 純函數單元測試(涵蓋率主力)
+### Layer 1 — Pure-function unit tests (bulk of coverage)
 
-vitest + fake timers,毫秒級。
+vitest + fake timers, millisecond scale.
 
-- `sessions.test.ts` — `upsertSession` 建立/延長/payer 不符、`remainingMs`(含負值)、`inGrace`、`expiredSessions`、`removeSession`
-- `payer.test.ts` — `authorization.from` 優先、`result.payer` 後備、**兩者皆空時必須拋錯而非綁定 undefined**(§2.6)
-- `watchdog.test.ts` — 寬限期邊界:grace 內剛好不剪、超過 1ms 即剪;剪線順序(先取值 → 移除 → cut → end);`event: cut` 的 payload 含正確的 `tickCount` / `spentAtomic`
-- `registry.test.ts` — 更新 store 後,先前取得的存取器仍讀到新值(§6.3.1 的舊快照問題)
-- `ledger.test.ts` — 花費上限邊界:餘額剛好等於單筆價格時是否付款
-- `sse.test.ts` — frame 還原:chunk 切在 `\n\n` 中間、單一 chunk 含多個 frame、跨三個 chunk 的長 frame
-- `usdc.test.ts` — atomic 換算精度、溢位與負值拒絕
-- `config.test.ts` — 各種缺漏與格式錯誤的 env
+- `sessions.test.ts` — `upsertSession` create/extend/payer mismatch, `remainingMs` (including negative values), `inGrace`, `expiredSessions`, `removeSession`
+- `payer.test.ts` — `authorization.from` takes priority, `result.payer` as fallback, **must throw rather than bind undefined when both are empty** (§2.6)
+- `watchdog.test.ts` — grace period boundary: exactly within grace is not cut, 1ms past it is cut; cut order (read values → remove → cut → end); `event: cut` payload contains the correct `tickCount` / `spentAtomic`
+- `registry.test.ts` — after the store is updated, a previously obtained accessor still reads the new value (the stale-snapshot problem in §6.3.1)
+- `ledger.test.ts` — spending cap boundary: whether to pay when the remaining amount exactly equals one payment's price
+- `sse.test.ts` — frame reconstruction: chunk split in the middle of `\n\n`, a single chunk containing multiple frames, a long frame spanning three chunks
+- `usdc.test.ts` — atomic conversion precision, rejection of overflow and negative values
+- `config.test.ts` — various missing and malformed env values
 
-### 第 2 層 — HTTP 合約測試(不碰鏈)
+### Layer 2 — HTTP contract tests (no chain)
 
-supertest + **假 facilitator**(Express,`/verify`、`/settle`、`/supported` 直接回成功,`/settle` 回一個假 `transaction` 字串)。
+supertest + **fake facilitator** (Express; `/verify`, `/settle`, `/supported` simply return success, and `/settle` returns a fake `transaction` string).
 
-> **此層使用真實時鐘,不用 fake timers。** 一旦涉及真的 socket I/O,fake timers 會讓 pending 的 I/O 永遠不 resolve。改以 config 注入極小常數(`CREDIT_PER_TICK_MS=300`、`TOPUP_THRESHOLD_MS=100`、`GRACE_MS=120`),使完整的「付款 → 串流 → 斷流」週期在 1 秒內跑完。這也順帶驗證了參數確實是注入的而非硬編碼。
+> **This layer uses the real clock, not fake timers.** Once real socket I/O is involved, fake timers make pending I/O never resolve. Instead, inject very small constants via config (`CREDIT_PER_TICK_MS=300`, `TOPUP_THRESHOLD_MS=100`, `GRACE_MS=120`) so the complete "pay → stream → cut" cycle finishes within 1 second. This also incidentally verifies that the parameters really are injected rather than hardcoded.
 
-驗證項目:
+What is verified:
 
-- 無 `X-PAYMENT` → 402
-- 有效付款 → `onAfterSettle` 觸發、session 建立、body 回 `{ sessionId, accepted: true }`
-- `X-PAYMENT-RESPONSE` header 存在且含 `transaction`
-- `/stream` 未知 sessionId → 404
-- 同一 sessionId 開第二條 SSE → 409
-- payer 不符的 tick → 403
-- SSE 收到 `event: credit` 且 `remainingMs` 遞減
-- 逾期 → 收到 `event: cut` 且連線確實關閉
-- agent 主動斷線 → session 自帳本移除,且日誌標示為 agent 端斷線(非 watchdog 剪線)
-- 被剪除的 sessionId 再次付款 → 回應帶**不同的**新 sessionId,舊 id 的 `tickCount` 不復活
-- `event: credit` 在寬限期內回報負的 `remainingMs` 且 `grace: true`
+- No `X-PAYMENT` → 402
+- Valid payment → `onAfterSettle` fires, session is created, body returns `{ sessionId, accepted: true }`
+- `X-PAYMENT-RESPONSE` header exists and contains `transaction`
+- `/stream` with unknown sessionId → 404
+- Second SSE opened for the same sessionId → 409
+- Tick with mismatched payer → 403
+- SSE receives `event: credit` and `remainingMs` decreases
+- Overdue → receives `event: cut` and the connection actually closes
+- Agent disconnects on its own → session removed from the ledger, and the log labels it as an agent-side disconnect (not a watchdog cut)
+- Paying again with a cut sessionId → response carries a **different** new sessionId, and the old id's `tickCount` does not revive
+- `event: credit` reports a negative `remainingMs` and `grace: true` during the grace period
 
-> **`paymentMiddleware` 的 `syncFacilitatorOnStart` 預設為 `true`**(第 5 個位置參數),啟動時會呼叫 facilitator 的 `/supported`。假 facilitator 必須實作此端點,否則測試中 server 無法啟動。
+> **`paymentMiddleware`'s `syncFacilitatorOnStart` defaults to `true`** (the 5th positional parameter), and calls the facilitator's `/supported` at startup. The fake facilitator must implement this endpoint, or the server cannot start in tests.
 
-### 第 3 層 — 鏈上冒煙測試(手動)
+### Layer 3 — On-chain smoke test (manual)
 
-`npm run smoke`:對真實 Fuji 跑 3 個 tick,輸出 tx hash。不進 CI,不計入涵蓋率。
+`npm run smoke`: run 3 ticks against real Fuji and output the tx hashes. Not in CI, not counted toward coverage.
 
-### 實作順序
+### Implementation order
 
 ```
-0. 量測 spike(拋棄式)→ 定案 §5 參數
-1. sessions / usdc / config / sse   純函數,無 I/O
-2. watchdog + stream                假 TokenSource,無付款
-3. 假 facilitator + 合約測試層        完整流程,不碰鏈
-4. 真 x402 middleware + onAfterSettle
-5. 真 facilitator + Fuji            冒煙測試
+0. Measurement spike (throwaway) → finalize §5 parameters
+1. sessions / usdc / config / sse   pure functions, no I/O
+2. watchdog + stream                fake TokenSource, no payment
+3. fake facilitator + contract test layer   full flow, no chain
+4. real x402 middleware + onAfterSettle
+5. real facilitator + Fuji          smoke test
 ```
 
-付款層放最後:第 1–3 步的每一項都能在不碰鏈的情況下完成驗證。
+The payment layer goes last: every item in steps 1–3 can be verified without touching the chain.
 
-## 9. 已知風險
+## 9. Known risks
 
-| 風險 | 說明 | 應對 |
+| Risk | Description | Mitigation |
 | --- | --- | --- |
-| **settle 耗時決定參數可行性** | settle 位於回應關鍵路徑上(§2.5)。若實測 wall-clock 接近或超過 `TOPUP_THRESHOLD_MS`,補款永遠追不上消耗,demo 會自行斷流 | §8 第 0 步的量測 spike 先於一切實作;`TOPUP_THRESHOLD_MS` 必須大於實測值 |
-| facilitator EOA nonce 排隊 | 高頻 settle 時 facilitator signer 使用 sequential nonce,連續結算可能排隊或衝突 | spike 階段即可觀察;若發生,加大 `CREDIT_PER_TICK_MS` 降低頻率 |
-| 套件已發佈版本與 `main` branch 不一致 | `DEFAULT_ASSETS` / `DEFAULT_STABLECOINS` 的命名與內容在兩者間不同(§3.3) | 版本鎖 `2.25.0`;所有行為判斷以安裝的 dist 為準,不看 GitHub 原始碼 |
-| 第三方文件版本落後 | 多數 x402 教學仍為 v1 寫法 | 一律以 `coinbase/x402` repo 的 v2 範例與實際 dist 為準 |
-| facilitator gas 耗盡 | 自架需自行維護 AVAX 餘額 | 錯誤訊息明確指向此原因(見 §7) |
-| EIP-3009 路徑出狀況 | 主要 transfer method 依賴 Fuji USDC 的 `transferWithAuthorization` | permit2 為可用備援,但**有前置條件**,見 §9.1 |
-| hook 拋錯導致付款已結算但 session 未建立 | 見 §2.5 殘留風險 | PoC 接受;agent 重試一次後明確報錯 |
-| `/stream` 的 bearer sessionId | 授權 = 持有 token(UUID,不可列舉);持有者可佔據唯一連線至額度到期,但無法延長(payer 綁定擋住) | PoC 接受。傳輸採 `X-Drip-Session` header 而非 query string,消除 proxy/access-log 洩漏面;威脅模型為本機/測試網 |
+| **Settle duration determines parameter viability** | Settle sits on the response's critical path (§2.5). If the measured wall-clock approaches or exceeds `TOPUP_THRESHOLD_MS`, top-ups will never catch up with consumption, and the demo will cut its own stream | The §8 step 0 measurement spike precedes all implementation; `TOPUP_THRESHOLD_MS` must be greater than the measured value |
+| Facilitator EOA nonce queuing | Under high-frequency settles the facilitator signer uses sequential nonces, so consecutive settlements may queue or collide | Observable already in the spike phase; if it happens, increase `CREDIT_PER_TICK_MS` to lower the frequency |
+| Package's published version differs from the `main` branch | `DEFAULT_ASSETS` / `DEFAULT_STABLECOINS` differ in naming and contents between the two (§3.3) | Pin version `2.25.0`; base all behavioral judgments on the installed dist, not the GitHub source |
+| Third-party docs lag behind | Most x402 tutorials still use v1 usage | Always go by the v2 examples in the `coinbase/x402` repo and the actual dist |
+| Facilitator runs out of gas | Self-hosting means maintaining the AVAX balance yourself | Error message points clearly to this cause (see §7) |
+| Problems with the EIP-3009 path | The primary transfer method depends on Fuji USDC's `transferWithAuthorization` | permit2 is a usable fallback, but **has preconditions**, see §9.1 |
+| Hook throws, so payment is settled but no session is created | See the residual risk in §2.5 | Accepted for the PoC; agent retries once then reports a clear error |
+| Bearer sessionId for `/stream` | Authorization = possessing the token (a UUID, not enumerable); the holder can occupy the single connection until the credit expires, but cannot extend it (blocked by payer binding) | Accepted for the PoC. Transport uses the `X-Drip-Session` header rather than the query string, eliminating proxy/access-log leakage; the threat model is local machine/testnet |
 
-### 9.1 permit2 備援的前置條件
+### 9.1 Preconditions for the permit2 fallback
 
-`@x402/evm` 的 exact scheme 有兩條 transfer method:`eip3009`(預設)與 `permit2`。本專案走 `eip3009`,但若該路徑出狀況,permit2 在 Fuji 上是可用的備援 —— **不過它不是改個設定就能切換**。
+The exact scheme in `@x402/evm` has two transfer methods: `eip3009` (default) and `permit2`. This project uses `eip3009`, but if that path has problems, permit2 is a usable fallback on Fuji — **however, it cannot be switched on just by changing a setting**.
 
-已實測確認的部署狀況(Fuji,`eth_getCode`):
+Deployment status confirmed by measurement (Fuji, `eth_getCode`):
 
-| 合約 | 位址 | bytecode |
+| Contract | Address | bytecode |
 | --- | --- | --- |
 | Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | 9152 bytes |
 | x402ExactPermit2Proxy | `0x402085c248EeA27D92E8b30b2C58ed07f9E20001` | 2913 bytes |
 
-> proxy 位址在 `@x402/evm@2.25.0` 中是**單一字串常數** `x402ExactPermit2ProxyAddress`,而非 per-chain 對照表 —— 屬確定性部署,各鏈同址。
+> In `@x402/evm@2.25.0` the proxy address is a **single string constant** `x402ExactPermit2ProxyAddress`, not a per-chain lookup table — it is a deterministic deployment, at the same address on every chain.
 
-**前置條件:付款者錢包必須先對該 token 做一次性的鏈上 `approve` 給 Permit2 合約**,之後才能以鏈下簽名授權個別轉帳。函式庫的 API 形狀直接說明了這一點:
+**Precondition: the payer wallet must first make a one-time on-chain `approve` of that token to the Permit2 contract**, and only then can individual transfers be authorized with off-chain signatures. The library's API shape states this directly:
 
 ```ts
-// createPermit2ApprovalTx(tokenAddress) → { to, data },由呼叫端自行送出交易
+// createPermit2ApprovalTx(tokenAddress) → { to, data }; the caller sends the transaction itself
 const tx = createPermit2ApprovalTx("0x...");
 await walletClient.sendTransaction({ to: tx.to, data: tx.data });
 ```
 
-由此推出兩個影響:
+This leads to two consequences:
 
-- **不影響 §2.5 的 settle 延遲分析。** 這筆 approve 是一次性的,不進每個 tick 的熱路徑。
-- **但 agent 錢包會需要 AVAX。** 走 `eip3009` 時 agent 完全不需要 AVAX(gas 是 facilitator 的事),這是 §7 目前沒有「agent AVAX 不足」那一列的原因。**一旦啟用 permit2 備援,該列就必須補上**,且 §1 的快速開始要多一個「agent 錢包領 AVAX」的步驟。
+- **It does not affect the settle latency analysis in §2.5.** This approve is one-time and does not enter the hot path of each tick.
+- **But the agent wallet will need AVAX.** With `eip3009` the agent needs no AVAX at all (gas is the facilitator's business), which is why §7 currently has no "agent short on AVAX" row. **Once the permit2 fallback is enabled, that row must be added**, and the quick start in §1 needs an extra "get AVAX for the agent wallet" step.
 
-## 10. 驗收標準
+## 10. Acceptance criteria
 
-1. `docker compose up` 起得了 facilitator,`/health` 回應正常
-2. `npm run server` 起得了賣方 server;facilitator 未啟動時拒絕啟動並給出明確訊息
-3. `npm run agent` 後,終端可見:每個 tick 的付款、自 `X-PAYMENT-RESPONSE` 讀出的 tx hash、累計花費(USDC)、以及持續流動的 token
-4. 第一次 Ctrl-C 後,agent 停止付款但保持連線,token 繼續流動數秒
-5. 經過「停付當下餘額 + `GRACE_MS`」後(定案參數下為 2～27 秒,**2026-09-06 已實測通過**),server 主動切斷,agent 端顯示連線已被 server 關閉,server 端標示為 watchdog 剪線
-6. 將 `MAX_SPEND_ATOMIC` 調低後,agent 撞到上限自動停付,產生相同的斷流結果
-7. 單元測試與合約測試通過,涵蓋率 ≥ 80%
-8. ~~§8 第 0 步的 spike 已執行~~ **2026-09-06 已完成**,§5 參數已依實測定案
+1. `docker compose up` brings up the facilitator, and `/health` responds normally
+2. `npm run server` brings up the seller server; when the facilitator is not running it refuses to start and gives a clear message
+3. After `npm run agent`, the terminal shows: each tick's payment, the tx hash read from `X-PAYMENT-RESPONSE`, cumulative spend (USDC), and continuously flowing tokens
+4. After the first Ctrl-C, the agent stops paying but stays connected, and tokens keep flowing for a few seconds
+5. After "credit remaining at the moment payment stops + `GRACE_MS`" (2-27 seconds under the finalized parameters, **measured and passed on 2026-09-06**), the server actively cuts the line; the agent side shows that the connection was closed by the server, and the server side labels it as a watchdog cut
+6. After lowering `MAX_SPEND_ATOMIC`, the agent hits the cap, stops paying automatically, and produces the same stream cut result
+7. Unit tests and contract tests pass, coverage ≥ 80%
+8. ~~§8 step 0 spike has been run~~ **Completed 2026-09-06**; §5 parameters finalized from measurements

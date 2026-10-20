@@ -14,27 +14,27 @@ function fakeRes() {
 }
 
 describe("createStreamHub", () => {
-  it("attach 第一條連線成功", () => {
+  it("the first attach succeeds", () => {
     const hub = createStreamHub();
     expect(hub.attach("s1", fakeRes())).toBe(true);
     expect(hub.has("s1")).toBe(true);
   });
 
-  it("同一 sessionId 的第二條連線被拒絕(防止一份付款餵多條流)", () => {
+  it("rejects a second connection for the same sessionId (stops one payment feeding multiple streams)", () => {
     const hub = createStreamHub();
     hub.attach("s1", fakeRes());
     expect(hub.attach("s1", fakeRes())).toBe(false);
     expect(hub.size()).toBe(1);
   });
 
-  it("detach 後可重新 attach", () => {
+  it("can re-attach after detach", () => {
     const hub = createStreamHub();
     hub.attach("s1", fakeRes());
     hub.detach("s1");
     expect(hub.attach("s1", fakeRes())).toBe(true);
   });
 
-  it("cut 送出 event: cut 後關閉連線並自副表移除", () => {
+  it("cut sends event: cut, then closes the connection and removes it from the side table", () => {
     const hub = createStreamHub();
     const res = fakeRes() as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
     hub.attach("s1", res as never);
@@ -50,19 +50,19 @@ describe("createStreamHub", () => {
     expect(written).toContain('"tickCount":3');
     expect(written).toContain('"spentAtomic":"3000"');
     expect(res.end).toHaveBeenCalled();
-    // 順序:必須先送出 event: cut,再關閉連線
+    // Order: event: cut must be sent before the connection is closed
     expect(res.write.mock.invocationCallOrder[0]!).toBeLessThan(res.end.mock.invocationCallOrder[0]!);
     expect(hub.has("s1")).toBe(false);
   });
 
-  it("cut 不存在的 session 不拋錯", () => {
+  it("cutting a nonexistent session doesn't throw", () => {
     const hub = createStreamHub();
     expect(() =>
       hub.cut("nope", { sessionId: "nope", reason: "payment_lapsed", tickCount: 0, spentAtomic: "0" }),
     ).not.toThrow();
   });
 
-  it("token 含換行與偽造 event 時,以多行 data 編碼為單一 frame,round-trip 還原", () => {
+  it("encodes tokens with newlines and forged events as multi-line data in a single frame, and round-trips", () => {
     const hub = createStreamHub();
     const res = fakeRes() as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
     hub.attach("s1", res as never);
@@ -70,19 +70,19 @@ describe("createStreamHub", () => {
     hub.sendToken("s1", evil);
 
     const written = res.write.mock.calls.map((c) => String(c[0])).join("");
-    // 只有一個 frame:frame 邊界是 \n\n,event 欄位必在行首。
-    // 不能用 split("event: ") 計數 —— 多行編碼後的資料行 "data: event: cut" 本身含
-    // "event: " 子字串,會被誤算成第二個 frame(已實測:該寫法在正確編碼下也回 2)。
+    // Only one frame: the frame boundary is \n\n, and the event field must be at the start of a line.
+    // Can't count with split("event: ") — after multi-line encoding the data line "data: event: cut" itself contains
+    // the "event: " substring and would be miscounted as a second frame (verified: that approach returns 2 even with correct encoding).
     const eventLineCount = written.split("\n").filter((l) => l.startsWith("event: ")).length;
     expect(eventLineCount).toBe(1);
 
-    // round-trip:用自家 parser(import { createSseParser } from "../src/agent/sse.js")還原
+    // round-trip: restore with our own parser (import { createSseParser } from "../src/agent/sse.js")
     const parse = createSseParser();
     const frames = parse(written);
     expect(frames).toEqual([{ event: "token", data: evil }]);
   });
 
-  it("sendCredit 送出 event: credit 與正確 JSON", () => {
+  it("sendCredit sends event: credit with correct JSON", () => {
     const hub = createStreamHub();
     const res = fakeRes() as unknown as { write: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> };
     hub.attach("s1", res as never);
@@ -100,8 +100,8 @@ describe("createStreamHub", () => {
 });
 
 describe("cannedTokenSource", () => {
-  it("循環吐出詞元,不會耗盡", async () => {
-    const src = cannedTokenSource("abcdefgh"); // 4 字一組 → ["abcd", "efgh"]
+  it("cycles through tokens without running out", async () => {
+    const src = cannedTokenSource("abcdefgh"); // groups of 4 chars → ["abcd", "efgh"]
     const out: string[] = [];
     for await (const t of src.open()) {
       out.push(t);
@@ -110,7 +110,7 @@ describe("cannedTokenSource", () => {
     expect(out).toEqual(["abcd", "efgh", "abcd", "efgh", "abcd"]);
   });
 
-  it("接合後還原原文", async () => {
+  it("rejoins into the original text", async () => {
     const src = cannedTokenSource("abcdefgh");
     const out: string[] = [];
     for await (const t of src.open()) {

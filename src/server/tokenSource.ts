@@ -3,11 +3,11 @@ export interface TokenSource {
 }
 
 const CANNED =
-  "串流付費的重點不在金額大小,而在於強制力握在誰手上。傳統扣款假設有人會按下確認," +
-  "而機器之間的付款是高頻、微額、免帳號的。停止付款的那一刻,線就該斷。";
+  "What matters in streaming payments isn't the size of the amount but who holds the power to enforce. Traditional billing assumes someone will press confirm, " +
+  "but payments between machines are high-frequency, tiny, and account-free. The moment payment stops, the line should go dead.";
 
 /**
- * PoC 的推論後端。日後接真實 LLM 只需替換此實作,收費層無須改動。
+ * The PoC's inference backend. Hooking up a real LLM later only means swapping this implementation; the billing layer needs no changes.
  */
 export function cannedTokenSource(text: string = CANNED): TokenSource {
   const tokens = text.match(/.{1,4}/gu) ?? [text];

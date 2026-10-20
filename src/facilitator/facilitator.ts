@@ -8,27 +8,27 @@ import type { AppConfig } from "../config.js";
 import { FUJI_USDC } from "../shared/usdc.js";
 
 /**
- * 組出自架 facilitator(spec §2.7)。
+ * Assembles the self-hosted facilitator (spec §2.7).
  *
- * 抽成獨立函式是為了讓 `/supported` 的形狀能被測到 —— 它不碰網路,
- * 但錯了會讓 resource server 在啟動同步時判定整份 payload 無效,所有付款變 502。
+ * Split out as its own function so the shape of `/supported` can be tested — it doesn't touch the network,
+ * but if it's wrong the resource server deems the whole payload invalid during startup sync, and every payment becomes a 502.
  */
 export function buildFacilitator(config: AppConfig): x402Facilitator {
   const account = privateKeyToAccount(config.facilitatorPrivateKey as `0x${string}`);
   const client = createWalletClient({
     account,
     chain: avalancheFuji,
-    // viem 對 Fuji 的預設輪詢是 2000ms(chain 沒有 blockTime,退回 4000ms 再取半)。
+    // viem's default polling interval on Fuji is 2000ms (the chain has no blockTime, so it falls back to 4000ms and halves it).
     pollingInterval: config.facilitatorPollingMs,
     transport: http(config.fujiRpcUrl),
   }).extend(publicActions);
 
-  // toFacilitatorEvmSigner 的 getAddresses() 讀的是扁平的 client.address,
-  // 而 viem 的 WalletClient 只有 client.account.address —— 少了這行,
-  // /supported 的 signers 會變成 [null]。
+  // toFacilitatorEvmSigner's getAddresses() reads the flat client.address,
+  // but viem's WalletClient only has client.account.address — without this line,
+  // the signers in /supported become [null].
   const signerClient = { ...client, address: account.address };
-  // viem 2.56 的 signTypedData 泛型比 x402 的結構型 signer 介面更窄,runtime 方法集合相同;
-  // 轉型只用來收斂這個差異,address 已在上面明確補齊。
+  // viem 2.56's signTypedData generics are narrower than x402's structural signer interface; the runtime method set is the same.
+  // The cast only bridges that gap; address is already filled in explicitly above.
   const signer = toFacilitatorEvmSigner(
     signerClient as unknown as Parameters<typeof toFacilitatorEvmSigner>[0],
     { confirmationTimeoutMs: config.facilitatorConfirmationTimeoutMs },

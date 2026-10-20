@@ -29,15 +29,15 @@ function frame(event: string, data: string): string {
 }
 
 /**
- * token 資料可能含換行(\n\n 會提前終止 frame),或以 "event: " 開頭的行(偽造事件)。
- * 標準 SSE 多行編碼:以 \n 切分,每行發出一個 data: 欄位;agent 端 parser 以 \n 接合還原。
- * credit/cut 走 JSON.stringify(單行),仍用 frame(),不受影響。
+ * Token data may contain newlines (\n\n would end the frame early) or lines starting with "event: " (forged events).
+ * Standard SSE multi-line encoding: split on \n and emit one data: field per line; the agent-side parser rejoins them with \n.
+ * credit/cut go through JSON.stringify (single line) and still use frame(), unaffected.
  */
 function tokenFrame(token: string): string {
   return `event: token\n${token.split("\n").map((l) => `data: ${l}`).join("\n")}\n\n`;
 }
 
-/** Response 物件的副表 —— 刻意不放進 Session 記錄(spec §2.4)。 */
+/** Side table of Response objects — deliberately kept out of the Session record (spec §2.4). */
 export function createStreamHub(): StreamHub {
   const connections = new Map<string, Response>();
 

@@ -9,7 +9,7 @@ const valid = {
 };
 
 describe("loadConfig", () => {
-  it("以預設值補齊未指定的參數", () => {
+  it("fills unspecified parameters with defaults", () => {
     const c = loadConfig(valid);
     expect(c.creditPerTickMs).toBe(1_000);
     expect(c.topupThresholdMs).toBe(300);
@@ -25,7 +25,7 @@ describe("loadConfig", () => {
     expect(c.maxClaimsPerBatch).toBe(20);
   });
 
-  it("一次列出全部缺漏項,而非只報第一個", () => {
+  it("lists every missing item at once, not just the first", () => {
     try {
       loadConfig({});
       throw new Error("should have thrown");
@@ -39,35 +39,35 @@ describe("loadConfig", () => {
     }
   });
 
-  it("拒絕格式錯誤的地址", () => {
+  it("rejects a malformed address", () => {
     expect(() => loadConfig({ ...valid, LLM_PROVIDER_ADDRESS: "not-an-address" }))
       .toThrow(ConfigError);
   });
 
-  it("拒絕 TOPUP_THRESHOLD_MS >= CREDIT_PER_TICK_MS", () => {
+  it("rejects TOPUP_THRESHOLD_MS >= CREDIT_PER_TICK_MS", () => {
     expect(() =>
       loadConfig({ ...valid, CREDIT_PER_TICK_MS: "2000", TOPUP_THRESHOLD_MS: "2000" }),
     ).toThrow(/TOPUP_THRESHOLD_MS/);
   });
 
-  it("金額以 bigint 表示,不用 number", () => {
+  it("amounts are bigint, not number", () => {
     const c = loadConfig({ ...valid, MAX_SPEND_ATOMIC: "50000" });
     expect(typeof c.maxSpendAtomic).toBe("bigint");
   });
 
-  it("拒絕 withdraw delay 沒有大於 claim interval", () => {
+  it("rejects a withdraw delay that isn't greater than the claim interval", () => {
     expect(() =>
       loadConfig({ ...valid, WITHDRAW_DELAY_SECS: "60", CLAIM_INTERVAL_SECS: "60" }),
     ).toThrow(/WITHDRAW_DELAY_SECS/);
   });
 
-  it("拒絕提領輪詢比提領延遲還慢 —— 那樣插隊 claim 永遠來不及", () => {
+  it("rejects a withdraw poll slower than the withdraw delay -- the front-running claim would never make it in time", () => {
     expect(() =>
       loadConfig({ ...valid, WITHDRAW_DELAY_SECS: "120", WITHDRAW_POLL_MS: "120000" }),
     ).toThrow(/WITHDRAW_POLL_MS/);
   });
 
-  it("賣方授權私鑰是選填的,留空代表委派 facilitator 簽 claim 授權", () => {
+  it("the seller authorizer private key is optional; empty means the facilitator signs claim authorizations", () => {
     expect(loadConfig(valid).llmProviderAuthorizerPrivateKey).toBeUndefined();
     const key = `0x${"c".repeat(64)}`;
     expect(
@@ -76,7 +76,7 @@ describe("loadConfig", () => {
     ).toBe(key);
   });
 
-  it("提領輪詢間隔有預設值,不必在 .env 指定", () => {
+  it("the withdraw poll interval has a default and need not be set in .env", () => {
     expect(loadConfig(valid).withdrawPollMs).toBe(5_000);
   });
 });

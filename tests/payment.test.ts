@@ -10,7 +10,7 @@ import { startFakeFacilitator } from "./helpers/fakeFacilitator.js";
 const SELLER_AUTHORIZER_KEY = `0x${"c".repeat(64)}` as const;
 const FACILITATOR_AUTHORIZER = "0xdddddddddddddddddddddddddddddddddddddddd";
 
-// 起一個真的假 facilitator,resourceServer 啟動時的 /supported 同步才不會噴錯
+// Spin up a real fake facilitator so the resourceServer's /supported sync on startup doesn't blow up
 let fake: Awaited<ReturnType<typeof startFakeFacilitator>>;
 
 beforeAll(async () => {
@@ -18,7 +18,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // resourceServer 的 /supported 同步是背景 promise,等它落地再關,否則 teardown 會噴 unhandled rejection
+  // The resourceServer's /supported sync is a background promise; wait for it to land before closing, or teardown throws an unhandled rejection
   await new Promise((r) => setTimeout(r, 50));
   await fake.close();
 });
@@ -61,7 +61,7 @@ async function advertisedExtra(config: AppConfig): Promise<Record<string, unknow
 }
 
 describe("toReceiverAuthorizerSigner", () => {
-  it("位址取自私鑰,且真的簽得出 EIP-712", async () => {
+  it("derives the address from the private key and can really sign EIP-712", async () => {
     const signer = toReceiverAuthorizerSigner(SELLER_AUTHORIZER_KEY);
     expect(signer.address).toBe(privateKeyToAccount(SELLER_AUTHORIZER_KEY).address);
 
@@ -75,20 +75,20 @@ describe("toReceiverAuthorizerSigner", () => {
   });
 });
 
-describe("402 要求中的 receiverAuthorizer 歸屬(spec §2.4 / §3.1)", () => {
-  it("設了賣方授權私鑰時,由賣方自己擔任 receiverAuthorizer", async () => {
+describe("who owns receiverAuthorizer in the 402 requirements (spec §2.4 / §3.1)", () => {
+  it("with the seller authorizer private key set, the seller acts as receiverAuthorizer itself", async () => {
     const extra = await advertisedExtra(
       testConfig({ LLM_PROVIDER_AUTHORIZER_PRIVATE_KEY: SELLER_AUTHORIZER_KEY }),
     );
     expect(extra.receiverAuthorizer).toBe(privateKeyToAccount(SELLER_AUTHORIZER_KEY).address);
   });
 
-  it("未設私鑰時委派給 facilitator 廣告的位址", async () => {
+  it("without a private key, delegates to the address the facilitator advertises", async () => {
     const extra = await advertisedExtra(testConfig());
     expect(extra.receiverAuthorizer).toBe(getAddress(FACILITATOR_AUTHORIZER));
   });
 
-  it("一律把 withdrawDelay 帶給買方,買方才知道非合作提領要等多久", async () => {
+  it("always passes withdrawDelay to the buyer, so it knows how long a non-cooperative withdrawal takes", async () => {
     const config = testConfig({ WITHDRAW_DELAY_SECS: "900" });
     const extra = await advertisedExtra(config);
     expect(extra.withdrawDelay).toBe(config.withdrawDelaySecs);

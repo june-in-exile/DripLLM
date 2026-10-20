@@ -15,11 +15,11 @@ import { FUJI_USDC } from "../shared/usdc.js";
 import type { AppConfig } from "../config.js";
 
 /**
- * 開場存 DEPOSIT_ATOMIC,串流中不夠就補 DEPOSIT_TOPUP_ATOMIC(spec §5.2)。
+ * Deposit DEPOSIT_ATOMIC at open; top up by DEPOSIT_TOPUP_ATOMIC mid-stream when short (spec §5.2).
  *
- * 「是不是開場」不可以用 `currentBalance === 0` 判斷 —— 退款只退回未消耗的部分,
- * 已消耗未請款的金額會留在 channel 裡,於是重用的 channel 永遠走補款分支,
- * DEPOSIT_ATOMIC 再也不會生效。改以「餘額連一次補款都不到」為開場的判準。
+ * "Is this the opening deposit" must not be decided by `currentBalance === 0` -- a refund only returns the unconsumed part,
+ * consumed-but-unclaimed funds stay in the channel, so a reused channel would always take the top-up branch
+ * and DEPOSIT_ATOMIC would never apply again. Instead, "balance below a single top-up" marks an opening deposit.
  */
 function configuredDepositStrategy(config: AppConfig): BatchSettlementDepositStrategy {
   return ({ currentBalance, minimumDepositAmount }) => {
@@ -30,10 +30,10 @@ function configuredDepositStrategy(config: AppConfig): BatchSettlementDepositStr
   };
 }
 
-/** 套件的 DEFAULT_SALT。我們沒有覆寫它,所以 channelId 可以自己推導出來。 */
+/** The package's DEFAULT_SALT. We don't override it, so we can derive the channelId ourselves. */
 const DEFAULT_SALT = `0x${"0".repeat(64)}` as const;
 
-/** 推導 channelId 需要的最小 requirements 形狀。 */
+/** The minimal requirements shape needed to derive a channelId. */
 export type ChannelRequirements = {
   network: string;
   payTo: string;
@@ -42,15 +42,15 @@ export type ChannelRequirements = {
 };
 
 export type WalletOverrides = Readonly<{
-  /** 換掉押金政策。合約測試用它模擬「買方不再補押金」,藉此逼出賣方的押金守門。 */
+  /** Swap out the deposit policy. Contract tests use it to simulate "buyer stops topping up" and force the seller's deposit guard. */
   depositStrategy?: BatchSettlementDepositStrategy;
 }>;
 
 export function createWallet(config: AppConfig, overrides: WalletOverrides = {}) {
   const account = privateKeyToAccount(config.agentPrivateKey as `0x${string}`);
-  // 必須補上 readContract:recoverChannel 與 corrective 402 的復原都靠它讀鏈上狀態。
-  // 只給裸 account 的話,一旦本地 channel 紀錄與鏈上失步(例如退款後),
-  // 買方會永遠卡在 402,除非有人手動刪掉 channel 檔(spec §7)。
+  // readContract is required: recoverChannel and corrective 402 recovery both rely on it to read on-chain state.
+  // With a bare account, once the local channel record drifts from the chain (e.g. after a refund),
+  // the buyer is stuck on 402 forever unless someone deletes the channel file by hand (spec §7).
   const publicClient = createPublicClient({
     chain: avalancheFuji,
     transport: http(config.fujiRpcUrl),
@@ -86,12 +86,12 @@ export function createWallet(config: AppConfig, overrides: WalletOverrides = {})
     refund: () => refundChannel(scheme as any, `${config.serverBaseUrl}/tick`),
 
     /**
-     * 丟掉本地的 channel 紀錄,讓下一次付款改由 recoverChannel 從鏈上重建。
+     * Drop the local channel record so the next payment rebuilds it from the chain via recoverChannel.
      *
-     * 賣方端的閒置退款(REFUND_IDLE_SECS)不會通知買方,而套件的 corrective 復原
-     * 只認 cumulative_amount_mismatch 與 cumulative_amount_below_claimed 兩種錯誤 ——
-     * 退款造成的 cumulative_exceeds_balance 不在其中。少了這條路,買方會抱著
-     * 一份「餘額還有 50000」的過期紀錄永遠卡在 402(spec §7)。
+     * The seller's idle refund (REFUND_IDLE_SECS) does not notify the buyer, and the package's corrective recovery
+     * only recognizes two errors, cumulative_amount_mismatch and cumulative_amount_below_claimed --
+     * the cumulative_exceeds_balance caused by a refund is not one of them. Without this path the buyer would cling to
+     * a stale record saying "balance is still 50000" and stay stuck on 402 forever (spec §7).
      */
     forgetChannel: async (accepted: ChannelRequirements): Promise<void> => {
       const channelConfig = buildChannelConfig(

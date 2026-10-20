@@ -2,19 +2,19 @@ import { describe, it, expect } from "vitest";
 import { FUJI_USDC, atomicToUsd, formatUsd } from "../src/shared/usdc.js";
 
 describe("FUJI_USDC", () => {
-  it("EIP-712 domain name 是 'USD Coin' 而非 'USDC'", () => {
+  it("EIP-712 domain name is 'USD Coin', not 'USDC'", () => {
     expect(FUJI_USDC.name).toBe("USD Coin");
   });
 
-  it("網路識別字為 CAIP-2 格式", () => {
+  it("network identifier is in CAIP-2 format", () => {
     expect(FUJI_USDC.network).toBe("eip155:43113");
   });
 
-  it("decimals 為 6", () => {
+  it("decimals is 6", () => {
     expect(FUJI_USDC.decimals).toBe(6);
   });
 
-  it("使用 x402 v2.25 的確定性 batch-settlement 合約位址", () => {
+  it("uses the deterministic batch-settlement contract address from x402 v2.25", () => {
     expect(FUJI_USDC.batchSettlementAddress).toBe(
       "0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003",
     );
@@ -33,25 +33,25 @@ describe("atomicToUsd", () => {
     expect(atomicToUsd(0n)).toBe("0.000000");
   });
 
-  it("整數部分正確", () => {
+  it("integer part is correct", () => {
     expect(atomicToUsd(1234567n)).toBe("1.234567");
   });
 
-  it("拒絕負值", () => {
-    expect(() => atomicToUsd(-1n)).toThrow(/負/);
+  it("rejects negative values", () => {
+    expect(() => atomicToUsd(-1n)).toThrow(/negative/);
   });
 });
 
 describe("formatUsd", () => {
-  it("去除尾端零", () => {
+  it("strips trailing zeros", () => {
     expect(formatUsd(1000n)).toBe("$0.001");
   });
 
-  it("零值保留一位小數", () => {
+  it("keeps one decimal place for zero", () => {
     expect(formatUsd(0n)).toBe("$0.0");
   });
 
-  it("不因浮點數而失準", () => {
+  it("does not lose precision to floating point", () => {
     expect(formatUsd(50000n)).toBe("$0.05");
   });
 });

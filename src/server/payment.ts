@@ -10,8 +10,8 @@ import { FUJI_USDC } from "../shared/usdc.js";
 import type { AppConfig } from "../config.js";
 
 /**
- * 把 viem account 收斂成套件要的 receiver-authorizer signer。
- * viem 的 signTypedData 泛型比 AuthorizerSigner 的結構型介面窄,runtime 行為相同。
+ * Narrows a viem account into the receiver-authorizer signer the package expects.
+ * viem's signTypedData generics are narrower than AuthorizerSigner's structural interface; runtime behavior is the same.
  */
 export function toReceiverAuthorizerSigner(privateKey: string): AuthorizerSigner {
   const account = privateKeyToAccount(privateKey as `0x${string}`);
@@ -28,8 +28,8 @@ export function createPaymentStack(
   onAfterSettle: (ctx: never) => Promise<void>,
 ) {
   const facilitatorClient = new HTTPFacilitatorClient({ url: config.facilitatorUrl });
-  // 有私鑰就由賣方自己簽 claim/refund 授權(spec §2.4);沒有則委派 facilitator,
-  // 此時套件的 validateFacilitatorSupport 會要求 /supported 廣告 receiverAuthorizer。
+  // With a private key, the seller signs claim/refund authorizations itself (spec §2.4); otherwise it delegates to the facilitator,
+  // in which case the package's validateFacilitatorSupport requires /supported to advertise a receiverAuthorizer.
   const receiverAuthorizerSigner = config.llmProviderAuthorizerPrivateKey
     ? toReceiverAuthorizerSigner(config.llmProviderAuthorizerPrivateKey)
     : undefined;
@@ -57,13 +57,13 @@ export function createPaymentStack(
       network: FUJI_USDC.network,
       payTo: config.llmProviderAddress,
     },
-    description: "DripLLM 串流時間",
+    description: "DripLLM streaming time",
     mimeType: "application/json",
   } as const;
   const middleware = paymentMiddleware(
     {
       "POST /tick": tickResource,
-      // @x402 batch client 的 cooperative refund 以 GET probe 同一路徑取得 requirements。
+      // The @x402 batch client's cooperative refund fetches requirements via a GET probe on the same path.
       "GET /tick": tickResource,
     },
     resourceServer,

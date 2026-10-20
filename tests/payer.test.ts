@@ -10,36 +10,36 @@ const payload = (from?: string) => ({
 });
 
 describe("extractPayer", () => {
-  it("優先採用 authorization.from", () => {
+  it("prefers authorization.from", () => {
     expect(extractPayer(payload(FROM), SETTLE)).toBe(FROM);
   });
 
-  it("authorization.from 缺席時退回 result.payer", () => {
+  it("falls back to result.payer when authorization.from is absent", () => {
     expect(extractPayer(payload(undefined), SETTLE)).toBe(SETTLE);
   });
 
-  it("authorization.from 為空字串時退回 result.payer", () => {
+  it("falls back to result.payer when authorization.from is an empty string", () => {
     expect(extractPayer(payload(""), SETTLE)).toBe(SETTLE);
   });
 
-  it("兩者皆空時拋錯,絕不回傳 undefined", () => {
+  it("throws when both are empty, never returning undefined", () => {
     expect(() => extractPayer(payload(undefined), undefined)).toThrow(PayerUnknownError);
   });
 
-  it("payload 非物件時拋錯而非靜默通過", () => {
+  it("throws instead of silently passing when the payload isn't an object", () => {
     expect(() => extractPayer(null, undefined)).toThrow(PayerUnknownError);
     expect(() => extractPayer("nope", undefined)).toThrow(PayerUnknownError);
   });
 
-  it("空字串不算有效地址", () => {
+  it("an empty string isn't a valid address", () => {
     expect(() => extractPayer(payload(""), "")).toThrow(PayerUnknownError);
   });
 
-  it("地址一律正規化為小寫,避免大小寫造成誤判不符", () => {
+  it("always normalizes addresses to lowercase so casing can't cause false mismatches", () => {
     expect(extractPayer(payload(FROM.toUpperCase()), undefined)).toBe(FROM.toLowerCase());
   });
 
-  it("batch-settlement 從 channelConfig.payer 取得付款者", () => {
+  it("batch-settlement takes the payer from channelConfig.payer", () => {
     expect(
       extractPayer({ type: "voucher", channelConfig: { payer: FROM.toUpperCase() } }),
     ).toBe(FROM.toLowerCase());

@@ -21,7 +21,7 @@ const paymentPayload = {
 };
 
 describe("self-hosted facilitator HTTP adapter", () => {
-  it("提供 health 與 batch-settlement supported metadata", async () => {
+  it("exposes health and batch-settlement supported metadata", async () => {
     const app = createFacilitatorApp({
       getSupported: () => ({
         kinds: [{ x402Version: 2, scheme: "batch-settlement", network: "eip155:43113" }],
@@ -40,7 +40,7 @@ describe("self-hosted facilitator HTTP adapter", () => {
     expect(supported.body.kinds[0]).toMatchObject({ scheme: "batch-settlement" });
   });
 
-  it("轉送 verify 與 settle 並保持 x402 wire response", async () => {
+  it("forwards verify and settle and preserves the x402 wire response", async () => {
     const app = createFacilitatorApp({
       getSupported: () => ({ kinds: [], extensions: [], signers: {} }),
       verify: async () => ({ isValid: true, payer: "0x1111111111111111111111111111111111111111" }),
@@ -61,7 +61,7 @@ describe("self-hosted facilitator HTTP adapter", () => {
     expect(settle.body).toMatchObject({ success: true, transaction: "0xsettled" });
   });
 
-  it("缺少必要 payload 時回 400 JSON,不把程式例外洩漏出去", async () => {
+  it("returns 400 JSON when the required payload is missing, without leaking program exceptions", async () => {
     const app = createFacilitatorApp({
       getSupported: () => ({ kinds: [], extensions: [], signers: {} }),
       verify: async () => ({ isValid: true }),
@@ -71,10 +71,10 @@ describe("self-hosted facilitator HTTP adapter", () => {
     const res = await request(app).post("/verify").send({});
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "paymentPayload 與 paymentRequirements 為必填" });
+    expect(res.body).toEqual({ error: "paymentPayload and paymentRequirements are required" });
   });
 
-  it("verify 或 settle 拋錯時回 400 與訊息,不讓 stack trace 外洩", async () => {
+  it("returns 400 with the message when verify or settle throws, without leaking the stack trace", async () => {
     const app = createFacilitatorApp({
       getSupported: () => ({ kinds: [], extensions: [], signers: {} }),
       verify: async () => {
@@ -98,7 +98,7 @@ describe("self-hosted facilitator HTTP adapter", () => {
     expect(settle.body).toEqual({ error: "nonce too low" });
   });
 
-  it("settle 缺 paymentRequirements 時同樣回 400", async () => {
+  it("also returns 400 when settle is missing paymentRequirements", async () => {
     const app = createFacilitatorApp({
       getSupported: () => ({ kinds: [], extensions: [], signers: {} }),
       verify: async () => ({ isValid: true }),
@@ -108,12 +108,12 @@ describe("self-hosted facilitator HTTP adapter", () => {
     const res = await request(app).post("/settle").send({ paymentPayload });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("必填");
+    expect(res.body.error).toContain("required");
   });
 });
 
-describe("真正組起來的 facilitator(spec §10.1)", () => {
-  // 0xff…ff 超過 secp256k1 的曲線階,不是合法私鑰
+describe("the actually assembled facilitator (spec §10.1)", () => {
+  // 0xff…ff exceeds the secp256k1 curve order, so it isn't a valid private key
   const key = `0x${"1".repeat(64)}` as const;
   const config = loadConfig({
     FACILITATOR_URL: "http://localhost:8080",
@@ -122,7 +122,7 @@ describe("真正組起來的 facilitator(spec §10.1)", () => {
     AGENT_PRIVATE_KEY: `0x${"a".repeat(64)}`,
   });
 
-  it("/supported 廣告 batch-settlement、Fuji,以及 facilitator 自己的 receiverAuthorizer", async () => {
+  it("/supported advertises batch-settlement, Fuji, and the facilitator's own receiverAuthorizer", async () => {
     const res = await request(createFacilitatorApp(buildFacilitator(config))).get("/supported");
 
     expect(res.status).toBe(200);
@@ -135,7 +135,7 @@ describe("真正組起來的 facilitator(spec §10.1)", () => {
     expect(res.body.kinds[0].extra.receiverAuthorizer).toBe(privateKeyToAccount(key).address);
   });
 
-  it("signers 必須是真的位址 —— 出現 null 會讓 resource server 判定整份 payload 無效", async () => {
+  it("signers must be real addresses — a null makes the resource server deem the whole payload invalid", async () => {
     const res = await request(createFacilitatorApp(buildFacilitator(config))).get("/supported");
 
     const signers = Object.values(res.body.signers as Record<string, unknown[]>).flat();

@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   const config = loadConfig(process.env);
   const app = createFacilitatorApp(buildFacilitator(config));
   app.listen(config.facilitatorPort, () => {
-    logger.info("facilitator", `聽在 http://localhost:${config.facilitatorPort}`);
+    logger.info("facilitator", `listening on http://localhost:${config.facilitatorPort}`);
   });
 }
 

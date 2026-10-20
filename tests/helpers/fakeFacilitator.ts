@@ -19,7 +19,7 @@ function invalid(reason: string, payer: unknown) {
   return { isValid: false, invalidReason: reason, payer };
 }
 
-/** 與正式 facilitator 相同的 EIP-712 檢查:買方的 payerAuthorizer 必須真的簽過這張券。 */
+/** Same EIP-712 check as the real facilitator: the buyer's payerAuthorizer must actually have signed this voucher. */
 async function voucherSignatureOk(payload: VoucherPayload): Promise<boolean> {
   const authorizer = payload.channelConfig?.payerAuthorizer;
   const voucher = payload.voucher;
@@ -58,10 +58,10 @@ function stateExtra(channelId: string, state: ChannelState) {
 }
 
 /**
- * 假 facilitator。記帳與簽章驗證都是真的,唯一省略的是上鏈 ——
- * 這樣合約測試才能真的證明「押金耗盡就不送 token」而不是只證明 HTTP 有通。
+ * Fake facilitator. Bookkeeping and signature verification are real; the only thing skipped is going on-chain —
+ * so the contract tests can genuinely prove "no tokens once the deposit is exhausted" rather than just that HTTP works.
  *
- * syncFacilitatorOnStart 預設為 true,middleware 啟動時會呼叫 /supported。
+ * syncFacilitatorOnStart defaults to true, so the middleware calls /supported on startup.
  */
 export async function startFakeFacilitator(port = 0): Promise<{
   url: string;
@@ -94,7 +94,7 @@ export async function startFakeFacilitator(port = 0): Promise<{
     const payload = (req.body?.paymentPayload?.payload ?? {}) as VoucherPayload;
     const payer = payload.channelConfig?.payer ?? payload.authorization?.from;
 
-    // contract.test.ts 的 exact 形狀 payload:沒有 type,維持一律放行的舊行為。
+    // The exact-shape payload from contract.test.ts: no type, so keep the old always-allow behavior.
     if (typeof payload.type !== "string") {
       res.json({ isValid: true, payer, extra: stateExtra("", { balance: 0n, totalClaimed: 0n }) });
       return;

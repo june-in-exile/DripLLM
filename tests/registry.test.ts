@@ -4,10 +4,10 @@ import { upsertSession } from "../src/server/sessions.js";
 
 const PAYER = "0xaaaa000000000000000000000000000000000001";
 
-describe("createRegistry —— 舊快照問題", () => {
-  it("更新 store 後,先前取得的存取器讀到新值", () => {
+describe("createRegistry — stale snapshot problem", () => {
+  it("after the store is updated, a previously obtained accessor reads the new value", () => {
     const reg = createRegistry();
-    const read = () => reg.getStore(); // 模擬 handler 在註冊時捕獲存取器
+    const read = () => reg.getStore(); // simulates a handler capturing the accessor at registration time
     expect(read().size).toBe(0);
 
     const r = upsertSession(reg.getStore(), "s1", PAYER, 1000, 5000, 1000n, "0xtx");
@@ -18,7 +18,7 @@ describe("createRegistry —— 舊快照問題", () => {
     expect(read().has("s1")).toBe(true);
   });
 
-  it("移除後,同一個存取器讀到已移除的狀態", () => {
+  it("after removal, the same accessor reads the removed state", () => {
     const reg = createRegistry();
     const read = () => reg.getStore();
     const r = upsertSession(reg.getStore(), "s1", PAYER, 1000, 5000, 1000n, "0xtx");
@@ -30,67 +30,67 @@ describe("createRegistry —— 舊快照問題", () => {
 });
 
 describe("tombstone", () => {
-  it("標記後在 TTL 內為已剪除", () => {
+  it("is cut within the TTL after marking", () => {
     const reg = createRegistry();
     reg.markCut("s1", 1000, 60000);
     expect(reg.isCut("s1", 2000, 60000)).toBe(true);
   });
 
-  it("超過 TTL 後不再視為已剪除", () => {
+  it("is no longer considered cut after the TTL", () => {
     const reg = createRegistry();
     reg.markCut("s1", 1000, 60000);
     expect(reg.isCut("s1", 61001, 60000)).toBe(false);
   });
 
-  it("未標記的 id 為 false", () => {
+  it("is false for an unmarked id", () => {
     const reg = createRegistry();
     expect(reg.isCut("never", 1000, 60000)).toBe(false);
   });
 
-  it("TTL 邊界:剛好等於 TTL 仍視為已剪除", () => {
+  it("TTL boundary: exactly at the TTL still counts as cut", () => {
     const reg = createRegistry();
     reg.markCut("s1", 1000, 60000);
     expect(reg.isCut("s1", 61000, 60000)).toBe(true);
   });
 
-  it("isCut 無副作用:連續呼叫同一 id(第二次較小 nowMs)結果一致", () => {
+  it("isCut has no side effects: repeated calls on the same id (the second with a smaller nowMs) agree", () => {
     const reg = createRegistry();
     reg.markCut("s1", 1000, 60000);
-    // 先呼叫一次,用時間 61001(超過 TTL,時間差 60001 > 60000)
+    // First call at time 61001 (past the TTL, diff 60001 > 60000)
     expect(reg.isCut("s1", 61001, 60000)).toBe(false);
-    // 再呼叫一次,用時間 50000(在 TTL 內,時間差 49000 < 60000)
-    // 如果 isCut 有副作用(刪除 tombstone),這會返回 false(因為 s1 被刪掉)
-    // 如果 isCut 無副作用(純讀),這會返回 true(因為 s1 仍在 cutAt 中)
+    // Call again at time 50000 (within the TTL, diff 49000 < 60000)
+    // If isCut had side effects (deleting the tombstone), this would return false (because s1 was deleted)
+    // If isCut has no side effects (pure read), this returns true (because s1 is still in cutAt)
     expect(reg.isCut("s1", 50000, 60000)).toBe(true);
   });
 
-  it("markCut 會清掉已過期的舊 tombstone", () => {
+  it("markCut sweeps out expired old tombstones", () => {
     const reg = createRegistry();
     const ttl = 60000;
-    // 標記 a 在時間 1000
+    // mark a at time 1000
     reg.markCut("a", 1000, ttl);
-    // 標記 c 在時間 70000(此時 a 已過期:70000-1000=69000 > 60000)
-    // markCut 應在清理迴圈中掃掉 a
+    // mark c at time 70000 (a has expired by now: 70000-1000=69000 > 60000)
+    // markCut should sweep a out in its cleanup loop
     reg.markCut("c", 70000, ttl);
-    // 在有效期內檢查 a
-    // 若 a 已被掃掉     → isCut 不存在 → false
-    // 若 a 還存在(未清理) → 50000-1000=49000 不大於 60000 → true
-    // 這樣才能區分「有清理」和「沒清理」的結果
+    // check a within its validity window
+    // if a was swept out           → not in isCut → false
+    // if a still exists (not cleaned) → 50000-1000=49000 is not greater than 60000 → true
+    // this is what tells "cleaned" apart from "not cleaned"
     expect(reg.isCut("a", 50000, ttl)).toBe(false);
 
-    // 確認未過期項目不會被誤掃:
-    // 標記 b 在時間 30000
+    // confirm unexpired entries aren't swept by mistake:
+    // mark b at time 30000
     reg.markCut("b", 30000, ttl);
-    // 時間推進到 50000,標記 d
-    // b 還在有效期內(50000-30000=20000 不大於 60000)
+    // advance time to 50000, mark d
+    // b is still valid (50000-30000=20000 is not greater than 60000)
     reg.markCut("d", 50000, ttl);
-    // 檢查 b 仍在
+    // check b is still there
     expect(reg.isCut("b", 45000, ttl)).toBe(true);
 
-    // 確認正在寫入的項目不會被自己清理掃掉:
-    // 標記 x 在時間 100000,此時應沒有其他項目超期(假設此時只有 x 是新的)
+    // confirm the entry being written isn't swept by its own cleanup:
+    // mark x at time 100000; no other entry should be expired now (assuming only x is new)
     reg.markCut("x", 100000, ttl);
-    // x 在有效期內
+    // x is within its validity window
     expect(reg.isCut("x", 100001, ttl)).toBe(true);
   });
 });
