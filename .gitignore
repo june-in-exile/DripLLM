@@ -12,3 +12,6 @@ coverage/
 
 .DS_Store
 .vercel
+
+# Playwright MCP 的執行產物(console log、頁面快照)
+.playwright-mcp/
