@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canServe,
+  hasRefundableBalance,
   needsDepositTopUp,
   parseChannelAmounts,
   remainingTicks,
@@ -25,32 +26,32 @@ function channel(
   };
 }
 
-describe("canServe —— 押金守門", () => {
-  it("未 claim 的已提供服務仍會佔用押金", () => {
+describe("canServe — deposit gate", () => {
+  it("unclaimed served amount still occupies the deposit", () => {
     const fullyConsumed = channel(100n, 100n, 0n);
 
     expect(canServe(fullyConsumed, 40n)).toBe(false);
   });
 
-  it("claim 已提供的服務不會恢復可服務額度", () => {
+  it("claiming served amount doesn't restore serviceable credit", () => {
     const claimed = channel(100n, 100n, 100n);
 
     expect(canServe(claimed, 40n)).toBe(false);
   });
 
-  it("剩餘額度剛好等於一格時允許服務", () => {
+  it("allows service when remaining credit is exactly one tick", () => {
     const exact = channel(100n, 60n, 0n);
 
     expect(canServe(exact, 40n)).toBe(true);
   });
 
-  it("剩餘額度比一格少 1 atomic 時拒絕服務", () => {
+  it("refuses service when remaining credit is 1 atomic short of one tick", () => {
     const oneShort = channel(100n, 61n, 0n);
 
     expect(canServe(oneShort, 40n)).toBe(false);
   });
 
-  it("top-up 增加 balance 後恢復可服務額度", () => {
+  it("restores serviceable credit after a top-up increases balance", () => {
     const toppedUp = channel(140n, 100n, 0n);
 
     expect(canServe(toppedUp, 40n)).toBe(true);
@@ -58,13 +59,13 @@ describe("canServe —— 押金守門", () => {
 });
 
 describe("remainingTicks", () => {
-  it("以 balance 減去 chargedCumulativeAmount 並向下取整", () => {
+  it("subtracts chargedCumulativeAmount from balance and rounds down", () => {
     const unclaimedUsage = channel(1_000n, 610n, 0n);
 
     expect(remainingTicks(unclaimedUsage, 40n)).toBe(9);
   });
 
-  it("totalClaimed 變動不影響剩餘格數", () => {
+  it("changes in totalClaimed don't affect remaining ticks", () => {
     const beforeClaim = channel(1_000n, 600n, 0n);
     const afterClaim = channel(1_000n, 600n, 600n);
 
@@ -72,7 +73,7 @@ describe("remainingTicks", () => {
     expect(remainingTicks(afterClaim, 40n)).toBe(10);
   });
 
-  it("已消耗金額大於 balance 時不回傳負格數", () => {
+  it("doesn't return negative ticks when consumed exceeds balance", () => {
     const inconsistent = channel(100n, 101n, 0n);
 
     expect(remainingTicks(inconsistent, 40n)).toBe(0);
@@ -80,44 +81,44 @@ describe("remainingTicks", () => {
 });
 
 describe("needsDepositTopUp", () => {
-  it("可服務餘額剛好等於門檻時不補押金", () => {
+  it("doesn't top up the deposit when serviceable balance equals the threshold exactly", () => {
     expect(needsDepositTopUp(channel(5_040n, 40n, 0n), 5_000n)).toBe(false);
   });
 
-  it("可服務餘額低於門檻 1 atomic 時補押金", () => {
+  it("tops up the deposit when serviceable balance is 1 atomic below the threshold", () => {
     expect(needsDepositTopUp(channel(5_039n, 40n, 0n), 5_000n)).toBe(true);
   });
 
-  it("以已提供服務而非 totalClaimed 計算餘額", () => {
+  it("computes balance from served amount, not totalClaimed", () => {
     expect(needsDepositTopUp(channel(10_000n, 6_000n, 6_000n), 5_000n)).toBe(true);
   });
 });
 
 describe("withdrawDeadlineMs", () => {
-  it("未申請提領時沒有 deadline", () => {
+  it("has no deadline when no withdrawal has been requested", () => {
     expect(withdrawDeadlineMs({ withdrawRequestedAt: 0 }, 900)).toBeNull();
   });
 
-  it("把鏈上的秒級時間戳與延遲換成毫秒 deadline", () => {
+  it("converts the on-chain second-based timestamp and delay into a millisecond deadline", () => {
     expect(withdrawDeadlineMs({ withdrawRequestedAt: 1_700_000_000 }, 900)).toBe(
       1_700_000_900_000,
     );
   });
 });
 
-describe("守門函式的防呆", () => {
-  it("價格不可為 0 或負數 —— 否則剩餘格數是無限大", () => {
+describe("gate function guards", () => {
+  it("price must not be 0 or negative — otherwise remaining ticks would be infinite", () => {
     expect(() => remainingTicks(channel(100n, 0n, 0n), 0n)).toThrow(RangeError);
     expect(() => remainingTicks(channel(100n, 0n, 0n), -1n)).toThrow(RangeError);
   });
 
-  it("補款門檻不可為負數", () => {
+  it("top-up threshold must not be negative", () => {
     expect(() => needsDepositTopUp(channel(100n, 0n, 0n), -1n)).toThrow(RangeError);
   });
 });
 
-describe("parseChannelAmounts —— facilitator 回來的數字要先驗過", () => {
-  it("三個欄位齊全且都是十進位整數字串時才通過", () => {
+describe("parseChannelAmounts — numbers from the facilitator must be validated first", () => {
+  it("passes only when all three fields are present and are decimal integer strings", () => {
     expect(parseChannelAmounts({
       balance: "50000",
       chargedCumulativeAmount: "40",
@@ -125,7 +126,7 @@ describe("parseChannelAmounts —— facilitator 回來的數字要先驗過", (
     })).toEqual({ balance: "50000", chargedCumulativeAmount: "40", totalClaimed: "0" });
   });
 
-  it("欄位殘缺、型別不對或不是數字字串時一律回 null,不猜也不補 0", () => {
+  it("returns null whenever fields are missing, mistyped, or not numeric strings — no guessing, no defaulting to 0", () => {
     expect(parseChannelAmounts(undefined)).toBeNull();
     expect(parseChannelAmounts("not-an-object")).toBeNull();
     expect(parseChannelAmounts({ balance: "50000" })).toBeNull();
@@ -139,5 +140,19 @@ describe("parseChannelAmounts —— facilitator 回來的數字要先驗過", (
       chargedCumulativeAmount: "40",
       totalClaimed: "0",
     })).toBeNull();
+  });
+});
+
+describe("hasRefundableBalance — guard before refunding", () => {
+  it("has nothing to refund when the deposit is fully consumed", () => {
+    expect(hasRefundableBalance(channel(11720n, 11720n, 11720n))).toBe(false);
+  });
+
+  it("can't refund the consumed but unclaimed portion", () => {
+    expect(hasRefundableBalance(channel(100n, 100n, 0n))).toBe(false);
+  });
+
+  it("can refund while unconsumed deposit remains", () => {
+    expect(hasRefundableBalance(channel(11720n, 11680n, 11680n))).toBe(true);
   });
 });

@@ -5,11 +5,12 @@ import { payTick, SessionCutError, type PayResult } from "./heartbeat.js";
 import { createSseParser } from "./sse.js";
 import { createLedger, canAfford, recordTick, type SpendLedger } from "./ledger.js";
 import { renderTick, renderToken, renderCredit, renderStopPaying, renderCut } from "./render.js";
+import { isNothingToRefund } from "./refund.js";
 import { logger } from "../shared/logger.js";
 
 loadEnv();
 
-/** runAgent 的四個共享可變狀態。ledger 本身仍以不可變方式置換。 */
+/** The four pieces of shared mutable state in runAgent. The ledger itself is still swapped immutably. */
 type AgentState = {
   paying: boolean;
   ledger: SpendLedger;
@@ -27,8 +28,8 @@ function createAgentState(config: AppConfig): AgentState {
 }
 
 /**
- * 409 代表 sessionId 已被剪除,middleware 已取消結算(未扣款)。
- * 僅 tick #1 使用:此刻還沒有串流,換新 UUID 重試一次(spec §2.2.1)。
+ * 409 means the sessionId has been cut and the middleware cancelled settlement (nothing charged).
+ * Used only for tick #1: there is no stream yet, so retry once with a new UUID (spec §2.2.1).
  */
 async function payWithRetry(
   wallet: ReturnType<typeof createWallet>,
@@ -45,9 +46,9 @@ async function payWithRetry(
 }
 
 /**
- * credit 事件驅動的補款。mid-stream 409 表示 session 已被剪除,
- * 此時重付只會為一個永遠沒有串流的 session 白付(phantom tick),
- * 直接停付、不重試不重付,等 server 剪線。
+ * Top-up driven by credit events. A mid-stream 409 means the session has been cut;
+ * paying again would only waste money on a session that will never stream (a phantom tick),
+ * so stop paying outright -- no retry, no repay -- and wait for the server to cut.
  */
 async function topUp(
   wallet: ReturnType<typeof createWallet>,
@@ -73,9 +74,9 @@ async function topUp(
     if (e instanceof SessionCutError) {
       state.paying = false;
       process.stdout.write("\n");
-      logger.warn("agent", "session 已被剪除,停止付款");
+      logger.warn("agent", "session was cut, stopped paying");
     } else {
-      logger.error("agent", `付款服務中斷,串流即將斷線:${String(e)}`);
+      logger.error("agent", `payment service down, stream about to drop: ${String(e)}`);
       state.paying = false;
     }
   } finally {
@@ -83,16 +84,20 @@ async function topUp(
   }
 }
 
-/** 退款失敗不該無聲 —— 押金留在合約裡,使用者必須知道要手動取回(spec §10.7)。 */
+/** A failed refund must not be silent -- the deposit stays in the contract and the user must know to reclaim it manually (spec §10.7). */
 async function refundQuietly(wallet: ReturnType<typeof createWallet>): Promise<void> {
   try {
     await wallet.refund();
   } catch (e) {
-    logger.error("agent", `退還押金失敗,押金仍鎖在 channel 中:${String(e)}`);
+    if (isNothingToRefund(e)) {
+      logger.info("agent", "deposit fully used, nothing to refund");
+      return;
+    }
+    logger.error("agent", `deposit refund failed, deposit still locked in the channel: ${String(e)}`);
   }
 }
 
-/** settle 成功但 hook 拋錯時會出現這個 404。重試一次後放棄(spec §2.5 殘留風險)。 */
+/** This 404 appears when settle succeeds but the hook throws. Retry once, then give up (spec §2.5 residual risk). */
 async function openStream(config: AppConfig, state: AgentState): Promise<Response> {
   const first = await fetch(`${config.serverBaseUrl}/stream`, {
     headers: { "X-Drip-Session": state.sessionId },
@@ -111,10 +116,10 @@ async function runStreamLoop(
 ): Promise<void> {
   const streamRes = await openStream(config, state);
   if (streamRes.status === 404) {
-    logger.error("agent", "session 建立失敗,該筆付款已結算但未生效");
+    logger.error("agent", "session creation failed; that payment settled but never took effect");
     process.exit(1);
   }
-  if (!streamRes.body) throw new Error("串流無回應主體");
+  if (!streamRes.body) throw new Error("Stream response has no body");
 
   const parse = createSseParser();
   const reader = streamRes.body.getReader();
@@ -144,7 +149,7 @@ async function runAgent(config: AppConfig): Promise<void> {
   const wallet = createWallet(config);
   const state = createAgentState(config);
 
-  // 第一次 Ctrl-C 只停付款,連線保持 —— 這是整個 demo 成立的關鍵。
+  // The first Ctrl-C only stops paying and keeps the connection open -- the whole demo hinges on this.
   let interruptCount = 0;
   process.on("SIGINT", () => {
     interruptCount++;
@@ -156,7 +161,7 @@ async function runAgent(config: AppConfig): Promise<void> {
     void refundQuietly(wallet).finally(() => process.exit(0));
   });
 
-  // tick #1 不由 event: credit 驅動 —— 此刻 session 尚不存在(spec §2.2.1)
+  // tick #1 is not driven by event: credit -- the session doesn't exist yet (spec §2.2.1)
   const first = await payWithRetry(wallet, config, state);
   state.sessionId = first.sessionId;
   state.ledger = recordTick(state.ledger);
@@ -169,7 +174,7 @@ async function runAgent(config: AppConfig): Promise<void> {
   await runStreamLoop(wallet, config, state);
 }
 
-// loadConfig 必須在 async 鏈內,ConfigError 才會走下方友善訊息路徑。
+// loadConfig must run inside the async chain so ConfigError takes the friendly-message path below.
 async function main(): Promise<void> {
   await runAgent(loadConfig(process.env));
 }
